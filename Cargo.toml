@@ -1,0 +1,72 @@
+[package]
+name = "fusion-cli"
+version = "0.1.0"
+description = "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem."
+edition = "2024"
+authors = ["Fusion-MLX Team"]
+license = "MIT"
+
+[features]
+default = ["native"]
+
+# Native: macOS Apple Silicon with full Metal/MLX support
+native = []
+
+[dependencies]
+# CLI framework
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+
+# HTTP client for fusion-mlx API
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Terminal UI
+dialoguer = "0.11"
+indicatif = "0.17"
+tabled = "0.18"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# System info
+sysinfo = "0.33"
+
+# File hashing
+sha2 = "0.10"
+hex = "0.4"
+
+# Cron scheduling
+cron = "0.15"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Path handling
+dirs = "6"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID for task IDs
+uuid = { version = "1", features = ["v4"] }
+
+# Colored output
+colored = "3"
+
+# Glob for file matching
+glob = "0.3"
+
+# CSV export
+csv = "1.3"
+
+[[bin]]
+name = "fusion"
+path = "src/main.rs"
