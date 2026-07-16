@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
+use std::time::Duration;
 
 #[derive(Subcommand)]
 pub enum BenchCommands {
@@ -72,7 +73,8 @@ async fn bench_speed(model: String, tokens: u32) -> Result<()> {
     println!();
     println!("{}", "📊 Results".bold());
     println!("  Tokens generated: {}", tokens.to_string().cyan());
-    println!("  Time:             {:.2}s", elapsed.as_secs_f64().to_string().cyan());
+    println!("  Time:             {}",
+        indicatif::HumanDuration(Duration::from_secs_f64(elapsed.as_secs_f64())).to_string().cyan());
     println!("  Speed:            {:.1} tokens/s", speed.to_string().cyan().bold());
     println!("  Model:            {}", model.cyan());
 
@@ -91,9 +93,9 @@ async fn bench_mem(model: String) -> Result<()> {
     sys.refresh_memory();
 
     println!("{}", "📊 Memory Usage".bold());
-    println!("  Total RAM:  {}", format_bytes(sys.total_memory()).cyan());
-    println!("  Used RAM:   {}", format_bytes(sys.used_memory()).cyan());
-    println!("  Available:  {}", format_bytes(sys.available_memory()).cyan());
+    println!("  Total RAM:  {}", indicatif::HumanBytes(sys.total_memory()).to_string().cyan());
+    println!("  Used RAM:   {}", indicatif::HumanBytes(sys.used_memory()).to_string().cyan());
+    println!("  Available:  {}", indicatif::HumanBytes(sys.available_memory()).to_string().cyan());
 
     // 模拟加载模型
     println!();
@@ -102,7 +104,7 @@ async fn bench_mem(model: String) -> Result<()> {
 
     // 估算（实际应调用 fusion-mlx 的 stats API）
     let estimated = sys.used_memory() as f64 * 0.05;
-    println!("  Estimated model memory: {}", format_bytes(estimated as u64).cyan());
+    println!("  Estimated model memory: {}", indicatif::HumanBytes(estimated as u64).to_string().cyan());
     println!();
     println!("  {} Use `fusion service status` for real-time metrics.", "💡".yellow());
 
@@ -231,15 +233,4 @@ Use `fusion config set mlx.default-ctx 4096` for optimal performance.
     println!("{} Report saved to: {}", "✅".green(), output.cyan());
 
     Ok(())
-}
-
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit_idx = 0;
-    while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_idx += 1;
-    }
-    format!("{:.1} {}", size, UNITS[unit_idx])
 }

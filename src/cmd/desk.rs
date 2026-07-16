@@ -63,8 +63,11 @@ fn desk_list() -> Result<()> {
         }
     }).collect();
 
-    let table = Table::new(&entries).to_string();
-    println!("{}", table);
+    let mut table = Table::new(&entries);
+    table.with(tabled::settings::Style::modern());
+    table.with(tabled::settings::Width::increase(10));
+    println!("{}", table.to_string());
+
     println!();
     println!("  {} Use `fusion desk run <name>` to execute a template.", "💡".yellow());
     println!("  {} Use `fusion desk cron <name> --rule=\"0 21 * * *\"` to schedule.", "💡".yellow());

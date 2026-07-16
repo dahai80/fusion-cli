@@ -1,6 +1,6 @@
 use anyhow::Result;
 use colored::*;
-use sysinfo::System;
+use sysinfo::{Disks, Networks, System, Components};
 
 pub async fn run() -> Result<()> {
     println!();
@@ -17,42 +17,91 @@ pub async fn run() -> Result<()> {
     let arch = std::env::consts::ARCH;
     let hostname = System::host_name().unwrap_or_default();
     let kernel = System::kernel_version().unwrap_or_default();
+    let uptime = System::uptime();
+    let days = uptime / 86400;
+    let hours = (uptime % 86400) / 3600;
 
-    println!("  OS:       {} {}", os_name.cyan(), arch.cyan());
-    println!("  Hostname: {}", hostname.cyan());
-    println!("  Kernel:   {}", kernel.cyan());
-    println!("  CPU:      {} cores", sys.cpus().len().to_string().cyan());
-    println!("  Memory:   {} total / {} available",
-        format_bytes(sys.total_memory()).cyan(),
-        format_bytes(sys.available_memory()).cyan());
+    println!("  OS:        {} {}", os_name.cyan(), arch.cyan());
+    println!("  Hostname:  {}", hostname.cyan());
+    println!("  Kernel:    {}", kernel.cyan());
+    println!("  Uptime:    {}d {}h", days.to_string().cyan(), hours.to_string().cyan());
+    println!("  CPU:       {} cores / {} logical",
+        sys.physical_core_count().map(|c| c.to_string()).unwrap_or_else(|| "?".to_string()).cyan(),
+        sys.cpus().len().to_string().cyan());
+    println!("  Memory:    {} total / {} available / {} used",
+        indicatif::HumanBytes(sys.total_memory()).to_string().cyan(),
+        indicatif::HumanBytes(sys.available_memory()).to_string().cyan(),
+        indicatif::HumanBytes(sys.used_memory()).to_string().cyan());
+    println!("  Swap:      {} total / {} used",
+        indicatif::HumanBytes(sys.total_swap()).to_string().cyan(),
+        indicatif::HumanBytes(sys.used_swap()).to_string().cyan());
     println!();
 
-    // 2. Apple Silicon 检测
-    println!("{}", "🔌 Apple Silicon Check".bold());
+    // 2. 磁盘信息
+    println!("{}", "💾 Disk Information".bold());
+    let disks = Disks::new_with_refreshed_list();
+    for disk in disks.list() {
+        let _usage = disk.usage();
+        let total = disk.total_space();
+        let available = disk.available_space();
+        if total > 0 {
+            let pct = (total - available) as f64 / total as f64 * 100.0;
+            println!("  {}  {:.0}%  {} / {} available",
+                disk.name().to_string_lossy().cyan(),
+                pct,
+                indicatif::HumanBytes(available).to_string().green(),
+                indicatif::HumanBytes(total).to_string().cyan());
+        }
+    }
+    println!();
+
+    // 3. Apple Silicon 检测
+    println!("{}", "🔌 Apple Silicon & Metal Check".bold());
     if arch == "aarch64" {
         println!("  {} Apple Silicon (arm64)", "✅".green());
+        // 尝试获取 CPU 温度（Apple Silicon 支持）
+        let components = Components::new_with_refreshed_list();
+        for component in components.iter() {
+            if component.label().to_lowercase().contains("cpu") {
+                if let Some(temp) = component.temperature() {
+                    println!("  {} CPU temperature: {:.1}°C", "🌡️".cyan(), temp);
+                }
+            }
+        }
     } else {
         println!("  {} Intel (x86_64) — Metal/MLX may not be available", "⚠️".yellow());
     }
     println!();
 
-    // 3. fusion-mlx 检测
+    // 4. 网络信息
+    println!("{}", "🌐 Network Information".bold());
+    let networks = Networks::new_with_refreshed_list();
+    for (name, network) in networks.iter() {
+        println!("  {}  ↓ {}  ↑ {}",
+            name.cyan(),
+            indicatif::HumanBytes(network.total_received()).to_string().dimmed(),
+            indicatif::HumanBytes(network.total_transmitted()).to_string().dimmed());
+    }
+    println!();
+
+    // 5. fusion-mlx 检测
     println!("{}", "🎯 fusion-mlx Check".bold());
     check_service("fusion-mlx", "http://localhost:8000/v1/models").await;
     println!();
 
-    // 4. Fusion-KB 检测
+    // 6. Fusion-KB 检测
     println!("{}", "📚 Fusion-KB Check".bold());
     check_service("Fusion-KB", "http://localhost:11434/kb/bases").await;
     println!();
 
-    // 5. 依赖完整性
+    // 7. 依赖完整性
     println!("{}", "📦 Dependency Check".bold());
     println!("  {} Rust toolchain: stable", "✅".green());
     println!("  {} macOS: {}", "✅".green(), os_name.cyan());
+    println!("  {} Build: fusion-cli v{}", "✅".green(), env!("CARGO_PKG_VERSION"));
     println!();
 
-    // 6. 权限检查
+    // 8. 权限检查
     println!("{}", "🔐 Permission Check".bold());
     let home = dirs::home_dir().unwrap_or_default();
     let fusion_dir = home.join(".fusion");
@@ -60,6 +109,11 @@ pub async fn run() -> Result<()> {
         println!("  {} Fusion data dir: {}", "✅".green(), fusion_dir.display().to_string().cyan());
     } else {
         println!("  {} Fusion data dir: {} (not yet created)", "ℹ️".blue(), fusion_dir.display().to_string().cyan());
+    }
+    // 检查可执行权限
+    let fusion_cli = std::env::current_exe().unwrap_or_default();
+    if fusion_cli.exists() {
+        println!("  {} Binary: {}", "✅".green(), fusion_cli.display().to_string().cyan());
     }
     println!();
 
@@ -82,15 +136,4 @@ async fn check_service(name: &str, url: &str) {
             println!("     Start with: {} {} {}", "fusion service start".cyan(), name, "(or `fusion service start all`)".dimmed());
         }
     }
-}
-
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit_idx = 0;
-    while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_idx += 1;
-    }
-    format!("{:.1} {}", size, UNITS[unit_idx])
 }

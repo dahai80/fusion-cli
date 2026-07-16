@@ -73,7 +73,7 @@ async fn list_models() -> Result<()> {
             };
             entries.push(ModelEntry {
                 name,
-                size: format_bytes(size),
+                size: indicatif::HumanBytes(size).to_string(),
                 quant: quant.to_string(),
             });
         }
@@ -85,8 +85,10 @@ async fn list_models() -> Result<()> {
         return Ok(());
     }
 
-    let table = Table::new(&entries).to_string();
-    println!("{}", table);
+    let mut table = Table::new(&entries);
+    table.with(tabled::settings::Style::modern());
+    table.with(tabled::settings::Width::increase(10));
+    println!("{}", table.to_string());
     println!();
     println!("  Total: {} models", entries.len().to_string().cyan());
     Ok(())
@@ -126,7 +128,7 @@ async fn model_info(name: String) -> Result<()> {
     println!();
     println!("{} Model: {}", "📄".bold(), name.cyan());
     println!("  Path:     {}", model_dir.display().to_string().cyan());
-    println!("  Size:     {}", format_bytes(dir_size(&model_dir)).cyan());
+    println!("  Size:     {}", indicatif::HumanBytes(dir_size(&model_dir)).to_string().cyan());
     println!("  Format:   MLX (native)");
 
     let config_path = model_dir.join("config.json");
@@ -157,7 +159,7 @@ async fn delete_model(name: String) -> Result<()> {
     }
 
     let confirm = dialoguer::Confirm::new()
-        .with_prompt(format!("Delete model '{}' ({})? This cannot be undone.", name.cyan(), format_bytes(dir_size(&model_dir))))
+        .with_prompt(format!("Delete model '{}' ({}). This cannot be undone!", name.cyan(), indicatif::HumanBytes(dir_size(&model_dir))))
         .default(false)
         .interact()?;
 
@@ -177,7 +179,7 @@ async fn clean_models() -> Result<()> {
     if cache_dir.exists() {
         let size = dir_size(&cache_dir);
         std::fs::remove_dir_all(&cache_dir)?;
-        println!("  {} Freed: {}", "✅".green(), format_bytes(size).cyan());
+        println!("  {} Freed: {}", "✅".green(), indicatif::HumanBytes(size).to_string().cyan());
     } else {
         println!("  {} No cache to clean.", "ℹ️".blue());
     }
@@ -250,17 +252,6 @@ fn dir_size(path: &std::path::Path) -> u64 {
         total
     }
     walk(path)
-}
-
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit_idx = 0;
-    while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_idx += 1;
-    }
-    format!("{:.1} {}", size, UNITS[unit_idx])
 }
 
 #[derive(Tabled)]

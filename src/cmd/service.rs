@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
-use tabled::{Table, Tabled};
+use tabled::{Table, Tabled, settings::{Style, Width}};
 
 #[derive(Subcommand)]
 pub enum ServiceCommands {
@@ -65,8 +65,10 @@ async fn service_status() -> Result<()> {
         });
     }
 
-    let table = Table::new(&entries).to_string();
-    println!("{}", table);
+    let mut table = Table::new(&entries);
+    table.with(Style::modern());
+    table.with(Width::increase(10));
+    println!("{}", table.to_string());
     println!();
     println!("  {} Use `fusion service start [name]` to start a service.", "💡".yellow());
     println!("  {} Use `fusion service log [name]` to view real-time logs.", "💡".yellow());
