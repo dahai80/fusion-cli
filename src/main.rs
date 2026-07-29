@@ -107,6 +107,13 @@ enum Commands {
         action: cmd::service::ServiceCommands,
     },
 
+    // ── RAG 服务 ──
+    /// RAG 检索增强服务（对接 Fusion-RAG）
+    Rag {
+        #[command(subcommand)]
+        action: cmd::rag::RagCommands,
+    },
+
     // ── 桌面自动化 ──
     /// 桌面自动化（对接 Fusion-Desk）
     Desk {
@@ -165,6 +172,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Service { action }) => {
             cmd::service::handle_service(action).await?;
+        }
+        Some(Commands::Rag { action }) => {
+            cmd::rag::handle_rag(action).await?;
         }
         Some(Commands::Desk { action }) => {
             cmd::desk::handle_desk(action).await?;
