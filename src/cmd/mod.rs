@@ -4,6 +4,7 @@ pub mod cluster;
 pub mod completions;
 pub mod dashboard;
 pub mod desk;
+pub mod doc;
 pub mod doctor;
 pub mod init;
 pub mod kb;

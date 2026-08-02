@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.2-blue" alt="Version">
 </p>
 
 ---
@@ -211,9 +211,9 @@ Interactive terminal dashboard with real-time monitoring:
 | Command | Description |
 |---------|-------------|
 | `status [--watch=N]` | View all service statuses (auto-refresh every N seconds) |
-| `start [mlx/kb/modelhub/desk/rag/all]` | Start one or all services |
-| `stop [mlx/kb/modelhub/desk/rag/all]` | Stop one or all services |
-| `restart [mlx/kb/modelhub/desk/rag/all]` | Restart one or all services |
+| `start [mlx/kb/modelhub/desk/rag/doc/all]` | Start one or all services |
+| `stop [mlx/kb/modelhub/desk/rag/doc/all]` | Stop one or all services |
+| `restart [mlx/kb/modelhub/desk/rag/doc/all]` | Restart one or all services |
 | `log [name] --lines=50` | View service logs |
 
 ### Desktop Automation (`fusion desk`)
@@ -225,6 +225,15 @@ Interactive terminal dashboard with real-time monitoring:
 | `history [--limit=20]` | View task execution history |
 | `cron <name> --rule="0 21 * * *"` | Schedule a recurring task |
 | `stop --task-id=<id>` | Stop a running task |
+
+### Document Service (`fusion doc`)
+
+| Command | Description |
+|---------|-------------|
+| `start [--port=11449]` | Start Fusion-Doc service |
+| `stop` | Stop Fusion-Doc service |
+| `status` | View Fusion-Doc service status |
+| `log [--lines=50]` | View Fusion-Doc logs |
 
 ---
 
@@ -247,6 +256,7 @@ src/
 │   ├── bench.rs         # fusion bench (real benchmarks)
 │   ├── service.rs       # fusion service (watch mode V0.2.1)
 │   ├── rag.rs           # fusion rag
+│   ├── doc.rs           # fusion doc (start/stop/status/log)
 │   ├── desk.rs          # fusion desk (real API calls)
 │   ├── sync.rs          # fusion sync (model sync)
 │   └── cluster.rs       # fusion cluster
@@ -257,6 +267,7 @@ src/
 │   ├── modelhub.rs      # Model-Hub client (list, search, download, health)
 │   ├── rag.rs           # Fusion-RAG client (search, health, list KBs)
 │   ├── desk.rs          # Fusion-Desk client (templates, tasks, history, stop, health)
+│   ├── doc.rs           # Fusion-Doc client (health check, status detail)
 │   ├── gateway.rs       # Gateway client (service discovery) (V0.2.1)
 │   └── health.rs        # Unified health check (check_all, check_all_with_latency)
 ├── tui/                 # TUI dashboard (V0.2.1)
@@ -288,6 +299,7 @@ src/
 | Model-Hub | `http://localhost:11444` | `modelhub.base_url` |
 | Fusion-RAG | `http://localhost:11436` | `rag.base_url` |
 | Fusion-Desk | `http://localhost:9000` | `desk.base_url` |
+| Fusion-Doc | `http://localhost:11449` | `doc.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
 
 ---

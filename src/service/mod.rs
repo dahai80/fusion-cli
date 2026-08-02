@@ -1,4 +1,5 @@
 pub mod desk;
+pub mod doc;
 pub mod gateway;
 pub mod health;
 pub mod kb;
@@ -33,6 +34,7 @@ pub struct ServiceUrls {
     pub modelhub: String,
     pub rag: String,
     pub desk: String,
+    pub doc: String,
 }
 
 impl ServiceUrls {
@@ -44,6 +46,7 @@ impl ServiceUrls {
             modelhub: config.modelhub.base_url.clone(),
             rag: config.rag.base_url.clone(),
             desk: config.desk.base_url.clone(),
+            doc: config.doc.base_url.clone(),
         }
     }
 

@@ -26,6 +26,7 @@ pub struct FusionConfig {
     pub modelhub: ModelhubConfig,
     pub rag: RagConfig,
     pub desk: DeskConfig,
+    pub doc: DocConfig,
     pub log: LogConfig,
     #[serde(default)]
     pub gateway: Option<GatewayConfig>,
@@ -78,6 +79,11 @@ pub struct DeskConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DocConfig {
+    pub base_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LogConfig {
     pub level: String,
 }
@@ -115,6 +121,9 @@ impl Default for FusionConfig {
             },
             desk: DeskConfig {
                 base_url: "http://localhost:9000".to_string(),
+            },
+            doc: DocConfig {
+                base_url: "http://localhost:11449".to_string(),
             },
             log: LogConfig {
                 level: "info".to_string(),
@@ -193,6 +202,7 @@ fn get_config(key: String) -> Result<()> {
         "modelhub.base-url" => config.modelhub.base_url.clone(),
         "rag.base-url" => config.rag.base_url.clone(),
         "desk.base-url" => config.desk.base_url.clone(),
+        "doc.base-url" => config.doc.base_url.clone(),
         "log.level" => config.log.level.clone(),
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
@@ -232,6 +242,7 @@ async fn set_config(key: String, value: String) -> Result<()> {
         "modelhub.base-url" => config.modelhub.base_url = value.clone(),
         "rag.base-url" => config.rag.base_url = value.clone(),
         "desk.base-url" => config.desk.base_url = value.clone(),
+        "doc.base-url" => config.doc.base_url = value.clone(),
         "log.level" => config.log.level = value.clone(),
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());

@@ -44,6 +44,7 @@ Each `cmd/*.rs` follows the same pattern: a clap `Subcommand` enum + an async `h
 - `bench` — speed/mem/ctx/auto/report benchmarking (real MLX API calls via generate_tokens)
 - `service` — status(start/stop/restart/log for ecosystem services, --watch for continuous refresh)
 - `rag` — start/stop/status/search/list for RAG service
+- `doc` — start/stop/status/log for document service
 - `desk` — list/run/history/cron/stop for desktop automation (real API calls)
 - `agent` — AI agent with tool calling (prompt, model, permission tier)
 - `sync` — model sync
@@ -72,7 +73,7 @@ Config section: `[gateway]` with `enabled` and `base_url`.
 
 ## Config & Data Paths
 
-- Config: `~/.fusion/config.toml` (sections: model, kb, mlx, modelhub, rag, desk, log, gateway)
+- Config: `~/.fusion/config.toml` (sections: model, kb, mlx, modelhub, rag, desk, doc, log, gateway)
 - Models: `~/.fusion/models/`
 - KB data: `~/.fusion/kb/`
 - Logs: `~/.fusion/logs/` and `~/.fusion/fusion-cli.log`
@@ -87,4 +88,5 @@ Config section: `[gateway]` with `enabled` and `base_url`.
 | Fusion-KB | `http://localhost:11434/kb/bases` | `kb.base_url` |
 | Fusion-Desk | `http://localhost:9000/health` | `desk.base_url` |
 | Fusion-RAG | `http://localhost:11436/health` | `rag.base_url` |
+| Fusion-Doc | `http://localhost:11449/api/health` | `doc.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |

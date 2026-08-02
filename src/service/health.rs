@@ -21,6 +21,7 @@ pub async fn check_all() -> Result<Vec<ServiceStatus>> {
         ("ModelHub", &urls.modelhub),
         ("RAG", &urls.rag),
         ("Desk", &urls.desk),
+        ("Doc", &urls.doc),
     ];
 
     let mut results = Vec::new();
@@ -48,6 +49,7 @@ pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
         ("ModelHub", &urls.modelhub, "/v1/models"),
         ("RAG", &urls.rag, "/health"),
         ("Desk", &urls.desk, "/health"),
+        ("Doc", &urls.doc, "/api/health"),
     ];
 
     let mut results = Vec::new();
@@ -86,6 +88,7 @@ pub async fn check_named(name: &str) -> Result<ServiceStatus> {
         "modelhub" => ("ModelHub", urls.modelhub.clone()),
         "rag" => ("RAG", urls.rag.clone()),
         "desk" => ("Desk", urls.desk.clone()),
+        "doc" => ("Doc", urls.doc.clone()),
         _ => anyhow::bail!("Unknown service: {}", name),
     };
     let health_url = format!("{}/health", svc_url.trim_end_matches('/'));

@@ -8,7 +8,7 @@ use tabled::{
 
 use crate::service::ServiceUrls;
 use crate::service::health;
-use crate::service::{desk, kb, modelhub, rag};
+use crate::service::{desk, doc, kb, modelhub, rag};
 
 #[derive(Subcommand)]
 pub enum ServiceCommands {
@@ -119,6 +119,7 @@ async fn service_start(service: Option<String>) -> Result<()> {
             start_modelhub().await;
             start_desk().await;
             start_rag().await;
+            start_doc().await;
             println!();
             println!(
                 "{} All services started. Use `fusion service status` to verify.",
@@ -140,6 +141,9 @@ async fn service_start(service: Option<String>) -> Result<()> {
         Some("rag") => {
             start_rag().await;
         }
+        Some("doc") => {
+            start_doc().await;
+        }
         Some(s) => {
             println!("{} Unknown service: {}", "❌".red(), s.cyan());
         }
@@ -156,6 +160,7 @@ async fn service_stop(service: Option<String>) -> Result<()> {
             stop_modelhub().await;
             stop_desk().await;
             stop_rag().await;
+            stop_doc().await;
             println!();
             println!("{} All services stopped.", "✅".green());
         }
@@ -173,6 +178,9 @@ async fn service_stop(service: Option<String>) -> Result<()> {
         }
         Some("rag") | Some("fusion-rag") => {
             stop_rag().await;
+        }
+        Some("doc") | Some("fusion-doc") => {
+            stop_doc().await;
         }
         Some(s) => {
             println!("{} Unknown service: {}", "❌".red(), s.cyan());
@@ -370,6 +378,28 @@ async fn stop_desk() {
 async fn stop_rag() {
     println!("  {} Stopping Fusion-RAG...", "⏳".blue());
     println!("  {} Fusion-RAG stopped", "✅".green());
+}
+
+async fn start_doc() {
+    let urls = ServiceUrls::from_config();
+    println!("  {} Starting Fusion-Doc...", "⏳".blue());
+    match doc::health_check().await {
+        Ok(true) => println!(
+            "  {} Fusion-Doc already running ({})",
+            "⚠️".yellow(),
+            urls.doc
+        ),
+        _ => println!(
+            "  {} Fusion-Doc start: {} (use `fusion doc start`)",
+            "ℹ️".blue(),
+            urls.doc
+        ),
+    }
+}
+
+async fn stop_doc() {
+    println!("  {} Stopping Fusion-Doc...", "⏳".blue());
+    println!("  {} Fusion-Doc stopped", "✅".green());
 }
 
 #[derive(Tabled)]
