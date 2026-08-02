@@ -6,13 +6,14 @@ mod cmd;
 mod config;
 mod service;
 mod tools;
+mod tui;
 mod utils;
 
 use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "fusion")]
-#[command(version = "0.2.0")]
+#[command(version = "0.3.0")]
 #[command(about = "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.", long_about = None)]
 struct Cli {
     /// 强制离线模式（默认开启）
@@ -158,6 +159,10 @@ enum Commands {
         #[arg(short, long, default_value = "ask")]
         permission: String,
     },
+
+    // ── TUI Dashboard ──
+    /// TUI 交互式仪表盘（实时服务状态 + 系统监控）
+    Dashboard,
 }
 
 #[tokio::main]
@@ -246,6 +251,9 @@ async fn main() -> anyhow::Result<()> {
                 config.model.default_path.clone()
             });
             agent::run_agent(&model_name, &prompt, &permission).await?;
+        }
+        Some(Commands::Dashboard) => {
+            cmd::dashboard::run_dashboard().await?;
         }
     }
 

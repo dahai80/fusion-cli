@@ -1,6 +1,6 @@
 [package]
 name = "fusion-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem."
 edition = "2024"
 authors = ["Fusion-MLX Team"]

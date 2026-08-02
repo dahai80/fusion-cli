@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.0-blue" alt="Version">
 </p>
 
 ---
@@ -26,6 +26,7 @@
 - **Service Control** — Start/stop/restart all Fusion ecosystem services with real process management
 - **Desktop Automation** — Run Fusion-Desk templates, view history, stop tasks
 - **AI Agent** — Natural language with tool calling (sandbox/ask/auto permission tiers)
+- **TUI Dashboard** — Interactive terminal dashboard with service monitoring, model list, system stats
 - **Shell Completions** — Generate bash/zsh/fish/elvish/powershell completion scripts
 - **Init** — One-command environment setup
 
@@ -87,6 +88,12 @@ fusion bench speed --model=llama3-8b-instruct-4bit --runs=3
 # Use AI agent
 fusion agent "list my models and benchmark the fastest one" --model=llama3-8b-instruct-4bit
 
+# Launch TUI dashboard
+fusion dashboard
+
+# Watch service status (auto-refresh every 5s)
+fusion service status --watch=5
+
 # JSON output
 fusion model list --format=json
 
@@ -106,12 +113,31 @@ fusion completions zsh
 | `fusion doctor` | Full environment diagnostic (system, MLX, KB, ModelHub, RAG, Desk) |
 | `fusion init` | Initialize Fusion environment (dirs, config, health check) |
 | `fusion completions <shell>` | Generate shell completion scripts (bash/zsh/fish/elvish/powershell) |
+| `fusion dashboard` | Launch interactive TUI dashboard |
 | `fusion config list` | View all configuration |
 | `fusion config set <key> <value>` | Set a configuration value |
 | `fusion log` | View real-time logs |
 | `fusion log clear` | Clear all logs |
 
 **Global flags**: `--offline`, `--verbose`, `--mlx-ctx`, `--mlx-cache`, `--no-gpu`, `--format=json`
+
+### TUI Dashboard (`fusion dashboard`)
+
+Interactive terminal dashboard with real-time monitoring:
+
+- **Services Tab** — Service status with latency, port, start/stop from dashboard
+- **Models Tab** — Loaded MLX models list
+- **System Tab** — CPU, memory, temperature, architecture
+- **Logs Tab** — Recent log entries
+
+| Key | Action |
+|-----|--------|
+| `1-4` | Switch tab |
+| `↑/↓` or `j/k` | Navigate list |
+| `r` | Force refresh |
+| `s` | Start selected service |
+| `x` | Stop selected service |
+| `q` / `Esc` | Quit dashboard |
 
 ### Model Management (`fusion model`)
 
@@ -184,7 +210,7 @@ fusion completions zsh
 
 | Command | Description |
 |---------|-------------|
-| `status` | View all service statuses |
+| `status [--watch=N]` | View all service statuses (auto-refresh every N seconds) |
 | `start [mlx/kb/modelhub/desk/rag/all]` | Start one or all services |
 | `stop [mlx/kb/modelhub/desk/rag/all]` | Stop one or all services |
 | `restart [mlx/kb/modelhub/desk/rag/all]` | Restart one or all services |
@@ -213,12 +239,13 @@ src/
 │   ├── doctor.rs        # fusion doctor
 │   ├── init.rs          # fusion init (V0.2)
 │   ├── completions.rs   # fusion completions (V0.2)
+│   ├── dashboard.rs     # fusion dashboard (V0.3)
 │   ├── log.rs           # fusion log
 │   ├── model.rs         # fusion model (real pull/convert/quant)
 │   ├── chat.rs          # fusion chat/run/code/embed (SSE streaming)
 │   ├── kb.rs            # fusion kb
 │   ├── bench.rs         # fusion bench (real benchmarks)
-│   ├── service.rs       # fusion service
+│   ├── service.rs       # fusion service (watch mode V0.3)
 │   ├── rag.rs           # fusion rag
 │   ├── desk.rs          # fusion desk (real API calls)
 │   ├── sync.rs          # fusion sync (model sync)
@@ -230,7 +257,13 @@ src/
 │   ├── modelhub.rs      # Model-Hub client (list, search, download, health)
 │   ├── rag.rs           # Fusion-RAG client (search, health, list KBs)
 │   ├── desk.rs          # Fusion-Desk client (templates, tasks, history, stop, health)
-│   └── health.rs        # Unified health check (check_all, check_named)
+│   ├── gateway.rs       # Gateway client (service discovery) (V0.3)
+│   └── health.rs        # Unified health check (check_all, check_all_with_latency)
+├── tui/                 # TUI dashboard (V0.3)
+│   ├── mod.rs           # Event loop + terminal setup
+│   ├── app.rs           # App state machine (tabs, selection, data)
+│   ├── ui.rs            # ratatui rendering (services, models, system, logs)
+│   └── service_fetcher.rs # Background data fetching (health, models, system info)
 ├── agent/               # AI Agent engine (V0.2)
 │   ├── mod.rs           # Agent loop with tool calling
 │   ├── context.rs       # Context manager (message history, trimming)
@@ -255,6 +288,7 @@ src/
 | Model-Hub | `http://localhost:11444` | `modelhub.base_url` |
 | Fusion-RAG | `http://localhost:11436` | `rag.base_url` |
 | Fusion-Desk | `http://localhost:9000` | `desk.base_url` |
+| Gateway | `http://localhost:11432` | `gateway.base_url` |
 
 ---
 
@@ -290,12 +324,19 @@ src/
 - [x] Context manager with message trimming
 - [x] Loop statistics tracking
 
-### V0.3 (Future)
-- [ ] TUI dashboard (ratatui)
-- [ ] Gateway integration and service discovery
+### V0.3 ✅
+- [x] TUI dashboard (`fusion dashboard`) with ratatui — 4 tabs: Services/Models/System/Logs
+- [x] Gateway integration (`src/service/gateway.rs`) — service discovery with fallback
+- [x] Service health with latency detection (`check_all_with_latency`)
+- [x] Watch mode (`fusion service status --watch=N`) — auto-refresh every N seconds
+- [x] Dashboard service start/stop from TUI (s/x keys)
+
+### V0.4 (Future)
 - [ ] Distributed node management
 - [ ] One-click ecosystem deployment
 - [ ] Full CI/CD local AI pipeline
+- [ ] Agent auto-repair loop
+- [ ] MCP protocol support
 
 ---
 

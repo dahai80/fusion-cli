@@ -12,7 +12,11 @@ use crate::service::{desk, kb, modelhub, rag};
 
 #[derive(Subcommand)]
 pub enum ServiceCommands {
-    Status,
+    Status {
+        /// 持续监控模式（每 N 秒刷新）
+        #[arg(short, long)]
+        watch: Option<u64>,
+    },
     Start {
         service: Option<String>,
     },
@@ -31,7 +35,7 @@ pub enum ServiceCommands {
 
 pub async fn handle_service(action: ServiceCommands) -> Result<()> {
     match action {
-        ServiceCommands::Status => service_status().await,
+        ServiceCommands::Status { watch } => service_status(watch).await,
         ServiceCommands::Start { service } => service_start(service).await,
         ServiceCommands::Stop { service } => service_stop(service).await,
         ServiceCommands::Restart { service } => service_restart(service).await,
@@ -39,43 +43,69 @@ pub async fn handle_service(action: ServiceCommands) -> Result<()> {
     }
 }
 
-async fn service_status() -> Result<()> {
-    println!();
-    println!("{}", "🔌 Fusion Ecosystem Services".bold());
-    println!();
+async fn service_status(watch_interval: Option<u64>) -> Result<()> {
+    let interval = watch_interval.unwrap_or(0);
+    loop {
+        if interval > 0 {
+            print!("\x1B[2J\x1B[H");
+        }
+        println!();
+        println!("{}", "🔌 Fusion Ecosystem Services".bold());
+        println!();
 
-    let statuses = health::check_all().await?;
-    let mut entries = Vec::new();
-    for s in &statuses {
-        let (status, pid) = if s.alive {
-            (
-                "✅ running".green().to_string(),
-                "PID: detected".dimmed().to_string(),
-            )
+        let statuses = health::check_all_with_latency().await?;
+        let mut entries = Vec::new();
+        for s in &statuses {
+            let (status, pid) = if s.alive {
+                (
+                    "✅ running".green().to_string(),
+                    format!(":{}, {}ms", s.port, s.latency_ms.unwrap_or(0))
+                        .dimmed()
+                        .to_string(),
+                )
+            } else {
+                ("⬜ stopped".yellow().to_string(), "-".dimmed().to_string())
+            };
+            entries.push(ServiceEntry {
+                name: s.name.clone(),
+                status,
+                pid,
+                url: s.url.clone(),
+            });
+        }
+
+        let mut table = Table::new(&entries);
+        table.with(Style::modern());
+        table.with(Width::increase(10));
+        println!("{}", table);
+        println!();
+
+        let up_count = statuses.iter().filter(|s| s.alive).count();
+        println!(
+            "  {}/{} services running",
+            up_count.to_string().green(),
+            statuses.len()
+        );
+        println!(
+            "  {} Use `fusion service start [name]` to start a service.",
+            "💡".yellow()
+        );
+        println!(
+            "  {} Use `fusion service log [name]` to view real-time logs.",
+            "💡".yellow()
+        );
+
+        if interval > 0 {
+            println!(
+                "  {} Watch mode: refreshing every {}s (Ctrl+C to stop)",
+                "👀".cyan(),
+                interval
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
         } else {
-            ("⬜ stopped".yellow().to_string(), "-".dimmed().to_string())
-        };
-        entries.push(ServiceEntry {
-            name: s.name.clone(),
-            status,
-            pid,
-            url: s.url.clone(),
-        });
+            break;
+        }
     }
-
-    let mut table = Table::new(&entries);
-    table.with(Style::modern());
-    table.with(Width::increase(10));
-    println!("{}", table);
-    println!();
-    println!(
-        "  {} Use `fusion service start [name]` to start a service.",
-        "💡".yellow()
-    );
-    println!(
-        "  {} Use `fusion service log [name]` to view real-time logs.",
-        "💡".yellow()
-    );
 
     Ok(())
 }

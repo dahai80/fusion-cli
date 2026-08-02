@@ -2,6 +2,7 @@ pub mod bench;
 pub mod chat;
 pub mod cluster;
 pub mod completions;
+pub mod dashboard;
 pub mod desk;
 pub mod doctor;
 pub mod init;

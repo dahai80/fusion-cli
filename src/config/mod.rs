@@ -27,6 +27,19 @@ pub struct FusionConfig {
     pub rag: RagConfig,
     pub desk: DeskConfig,
     pub log: LogConfig,
+    #[serde(default)]
+    pub gateway: Option<GatewayConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GatewayConfig {
+    pub enabled: bool,
+    #[serde(default = "default_gateway_url")]
+    pub base_url: String,
+}
+
+fn default_gateway_url() -> String {
+    "http://localhost:11432".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -106,6 +119,7 @@ impl Default for FusionConfig {
             log: LogConfig {
                 level: "info".to_string(),
             },
+            gateway: None,
         }
     }
 }
