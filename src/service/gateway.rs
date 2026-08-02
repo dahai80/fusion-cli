@@ -6,9 +6,11 @@ use tracing::info;
 use super::ServiceUrls;
 use super::get_client;
 
+#[allow(dead_code)]
 const DEFAULT_GATEWAY_URL: &str = "http://localhost:11432";
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct ServiceEntry {
     pub name: String,
     pub host: String,
@@ -19,15 +21,18 @@ pub struct ServiceEntry {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct DiscoveryResponse {
     services: Vec<ServiceEntry>,
 }
 
+#[allow(dead_code)]
 pub struct GatewayClient {
     base_url: String,
     enabled: bool,
 }
 
+#[allow(dead_code)]
 impl GatewayClient {
     pub fn from_config() -> Self {
         let config = crate::config::load_config();
@@ -104,12 +109,11 @@ impl GatewayClient {
     }
 
     pub async fn get_service_url(&self, service_name: &str) -> String {
-        if self.enabled {
-            if let Ok(services) = self.discover_services().await {
-                if let Some(svc) = services.iter().find(|s| s.name == service_name) {
-                    return format!("http://{}:{}", svc.host, svc.port);
-                }
-            }
+        if self.enabled
+            && let Ok(services) = self.discover_services().await
+            && let Some(svc) = services.iter().find(|s| s.name == service_name)
+        {
+            return format!("http://{}:{}", svc.host, svc.port);
         }
         let urls = ServiceUrls::from_config();
         match service_name {
@@ -123,11 +127,12 @@ impl GatewayClient {
     }
 }
 
+#[allow(dead_code)]
 fn fallback_entries() -> Vec<ServiceEntry> {
     let urls = ServiceUrls::from_config();
     let extract_port = |url: &str| -> u16 {
         url.split(':')
-            .last()
+            .next_back()
             .and_then(|s| s.trim_end_matches('/').parse().ok())
             .unwrap_or(0)
     };

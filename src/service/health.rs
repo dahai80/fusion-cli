@@ -12,6 +12,7 @@ pub struct ServiceStatus {
     pub latency_ms: Option<u64>,
 }
 
+#[allow(dead_code)]
 pub async fn check_all() -> Result<Vec<ServiceStatus>> {
     let urls = ServiceUrls::from_config();
     let checks: Vec<(&str, &str)> = vec![
@@ -110,7 +111,7 @@ pub fn format_status_table(statuses: &[ServiceStatus]) -> String {
 
 fn extract_port(url: &str) -> u16 {
     url.split(':')
-        .last()
+        .next_back()
         .and_then(|s| s.trim_end_matches('/').split('/').next())
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)

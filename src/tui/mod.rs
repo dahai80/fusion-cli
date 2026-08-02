@@ -50,67 +50,66 @@ async fn run_app(
         terminal.draw(|f| ui::draw(f, app))?;
 
         let timeout = Duration::from_millis(TICK_RATE_MS);
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            app.quit();
-                        }
-                        KeyCode::Char('1') => {
-                            app.tab = app::Tab::Services;
-                            app.selected = 0;
-                        }
-                        KeyCode::Char('2') => {
-                            app.tab = app::Tab::Models;
-                            app.selected = 0;
-                        }
-                        KeyCode::Char('3') => {
-                            app.tab = app::Tab::System;
-                            app.selected = 0;
-                        }
-                        KeyCode::Char('4') => {
-                            app.tab = app::Tab::Logs;
-                            app.selected = 0;
-                        }
-                        KeyCode::Tab | KeyCode::Right => {
-                            app.next_tab();
-                        }
-                        KeyCode::BackTab | KeyCode::Left => {
-                            app.prev_tab();
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            app.down();
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            app.up();
-                        }
-                        KeyCode::Char('r') => {
-                            let data = fetch_all().await;
-                            app.update_data(data);
-                            tick_count = 0;
-                        }
-                        KeyCode::Char('s') => {
-                            if let Some(svc) = app.selected_service() {
-                                let name = svc.name.to_lowercase();
-                                info!(service = %name, "Starting service from dashboard");
-                                start_service_from_dashboard(&name).await;
-                                let data = fetch_all().await;
-                                app.update_data(data);
-                            }
-                        }
-                        KeyCode::Char('x') => {
-                            if let Some(svc) = app.selected_service() {
-                                let name = svc.name.to_lowercase();
-                                info!(service = %name, "Stopping service from dashboard");
-                                stop_service_from_dashboard(&name).await;
-                                let data = fetch_all().await;
-                                app.update_data(data);
-                            }
-                        }
-                        _ => {}
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => {
+                    app.quit();
+                }
+                KeyCode::Char('1') => {
+                    app.tab = app::Tab::Services;
+                    app.selected = 0;
+                }
+                KeyCode::Char('2') => {
+                    app.tab = app::Tab::Models;
+                    app.selected = 0;
+                }
+                KeyCode::Char('3') => {
+                    app.tab = app::Tab::System;
+                    app.selected = 0;
+                }
+                KeyCode::Char('4') => {
+                    app.tab = app::Tab::Logs;
+                    app.selected = 0;
+                }
+                KeyCode::Tab | KeyCode::Right => {
+                    app.next_tab();
+                }
+                KeyCode::BackTab | KeyCode::Left => {
+                    app.prev_tab();
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    app.down();
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    app.up();
+                }
+                KeyCode::Char('r') => {
+                    let data = fetch_all().await;
+                    app.update_data(data);
+                    tick_count = 0;
+                }
+                KeyCode::Char('s') => {
+                    if let Some(svc) = app.selected_service() {
+                        let name = svc.name.to_lowercase();
+                        info!(service = %name, "Starting service from dashboard");
+                        start_service_from_dashboard(&name).await;
+                        let data = fetch_all().await;
+                        app.update_data(data);
                     }
                 }
+                KeyCode::Char('x') => {
+                    if let Some(svc) = app.selected_service() {
+                        let name = svc.name.to_lowercase();
+                        info!(service = %name, "Stopping service from dashboard");
+                        stop_service_from_dashboard(&name).await;
+                        let data = fetch_all().await;
+                        app.update_data(data);
+                    }
+                }
+                _ => {}
             }
         }
 

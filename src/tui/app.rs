@@ -69,6 +69,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub fn tick(&mut self) {}
 
     pub fn quit(&mut self) {

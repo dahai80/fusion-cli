@@ -55,10 +55,12 @@ impl ContextManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn message_count(&self) -> usize {
         self.messages.len()
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.messages.clear();
     }

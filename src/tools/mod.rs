@@ -26,6 +26,7 @@ impl ToolExecutor {
         }
     }
 
+    #[allow(dead_code)]
     pub fn list_tools(&self) -> Vec<&str> {
         let mut names: Vec<&str> = self.tools.keys().map(|s| s.as_str()).collect();
         names.sort();

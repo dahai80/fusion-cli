@@ -1,11 +1,11 @@
-use tracing::info;
-
+#[allow(dead_code)]
 pub struct LoopStats {
     pub turns_used: u32,
     pub tools_called: u32,
     pub tokens_used: u32,
 }
 
+#[allow(dead_code)]
 impl LoopStats {
     pub fn new() -> Self {
         Self {

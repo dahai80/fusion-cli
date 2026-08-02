@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.3.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.1-blue" alt="Version">
 </p>
 
 ---
@@ -239,13 +239,13 @@ src/
 │   ├── doctor.rs        # fusion doctor
 │   ├── init.rs          # fusion init (V0.2)
 │   ├── completions.rs   # fusion completions (V0.2)
-│   ├── dashboard.rs     # fusion dashboard (V0.3)
+│   ├── dashboard.rs     # fusion dashboard (V0.2.1)
 │   ├── log.rs           # fusion log
 │   ├── model.rs         # fusion model (real pull/convert/quant)
 │   ├── chat.rs          # fusion chat/run/code/embed (SSE streaming)
 │   ├── kb.rs            # fusion kb
 │   ├── bench.rs         # fusion bench (real benchmarks)
-│   ├── service.rs       # fusion service (watch mode V0.3)
+│   ├── service.rs       # fusion service (watch mode V0.2.1)
 │   ├── rag.rs           # fusion rag
 │   ├── desk.rs          # fusion desk (real API calls)
 │   ├── sync.rs          # fusion sync (model sync)
@@ -257,9 +257,9 @@ src/
 │   ├── modelhub.rs      # Model-Hub client (list, search, download, health)
 │   ├── rag.rs           # Fusion-RAG client (search, health, list KBs)
 │   ├── desk.rs          # Fusion-Desk client (templates, tasks, history, stop, health)
-│   ├── gateway.rs       # Gateway client (service discovery) (V0.3)
+│   ├── gateway.rs       # Gateway client (service discovery) (V0.2.1)
 │   └── health.rs        # Unified health check (check_all, check_all_with_latency)
-├── tui/                 # TUI dashboard (V0.3)
+├── tui/                 # TUI dashboard (V0.2.1)
 │   ├── mod.rs           # Event loop + terminal setup
 │   ├── app.rs           # App state machine (tabs, selection, data)
 │   ├── ui.rs            # ratatui rendering (services, models, system, logs)
@@ -324,7 +324,7 @@ src/
 - [x] Context manager with message trimming
 - [x] Loop statistics tracking
 
-### V0.3 ✅
+### V0.2.1 ✅
 - [x] TUI dashboard (`fusion dashboard`) with ratatui — 4 tabs: Services/Models/System/Logs
 - [x] Gateway integration (`src/service/gateway.rs`) — service discovery with fallback
 - [x] Service health with latency detection (`check_all_with_latency`)

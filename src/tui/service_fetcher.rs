@@ -101,12 +101,13 @@ fn fetch_recent_logs(max: usize) -> Vec<String> {
     if let Ok(entries) = std::fs::read_dir(&log_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_file() && path.extension().map(|e| e == "log").unwrap_or(false) {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    let name = path.file_name().unwrap_or_default().to_string_lossy();
-                    all_logs.push(format!("── {} ──", name));
-                    all_logs.extend(fetch_recent_lines(&content, max / 2));
-                }
+            if path.is_file()
+                && path.extension().map(|e| e == "log").unwrap_or(false)
+                && let Ok(content) = std::fs::read_to_string(&path)
+            {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                all_logs.push(format!("── {} ──", name));
+                all_logs.extend(fetch_recent_lines(&content, max / 2));
             }
         }
     }

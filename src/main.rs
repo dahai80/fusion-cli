@@ -13,7 +13,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "fusion")]
-#[command(version = "0.3.0")]
+#[command(version = "0.2.1")]
 #[command(about = "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.", long_about = None)]
 struct Cli {
     /// 强制离线模式（默认开启）

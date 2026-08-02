@@ -21,6 +21,7 @@ fn base_url() -> String {
         .to_string()
 }
 
+#[allow(dead_code)]
 pub async fn list_models() -> Result<Vec<ModelEntry>> {
     let client = get_client();
     let url = format!("{}/v1/models", base_url());
@@ -34,6 +35,7 @@ pub async fn list_models() -> Result<Vec<ModelEntry>> {
     Ok(data)
 }
 
+#[allow(dead_code)]
 pub async fn search(name: &str) -> Result<Vec<ModelEntry>> {
     let client = get_client();
     let url = format!("{}/v1/models?q={}", base_url(), name);

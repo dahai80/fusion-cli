@@ -29,6 +29,7 @@ impl PermissionTier {
         }
     }
 
+    #[allow(dead_code)]
     pub fn requires_confirmation(&self, tool_name: &str) -> bool {
         match self {
             PermissionTier::Sandbox => false,

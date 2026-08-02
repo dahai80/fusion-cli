@@ -32,6 +32,7 @@ pub struct InferenceResponse {
 #[derive(Debug, Deserialize)]
 pub struct Choice {
     pub message: ResponseMessage,
+    #[allow(dead_code)]
     pub finish_reason: Option<String>,
 }
 
@@ -44,6 +45,7 @@ pub struct ResponseMessage {
 pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
+    #[allow(dead_code)]
     pub total_tokens: u32,
 }
 
@@ -63,6 +65,7 @@ pub struct ChatChunk {
 #[derive(Debug, Deserialize)]
 pub struct ChunkChoice {
     pub delta: ChunkDelta,
+    #[allow(dead_code)]
     pub finish_reason: Option<String>,
 }
 
@@ -174,6 +177,7 @@ pub async fn get_server_stats() -> Result<serde_json::Value> {
 }
 
 pub struct BenchResult {
+    #[allow(dead_code)]
     pub tokens_generated: u32,
     pub elapsed_secs: f64,
     pub tokens_per_sec: f64,
@@ -220,6 +224,7 @@ pub async fn generate_tokens(model: &str, max_tokens: u32) -> Result<BenchResult
     })
 }
 
+#[allow(dead_code)]
 pub fn assert_fusion_mlx_only() -> Result<()> {
     let urls = ServiceUrls::from_config();
     let base = urls.mlx;
