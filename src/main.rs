@@ -120,6 +120,20 @@ enum Commands {
         #[command(subcommand)]
         action: cmd::desk::DeskCommands,
     },
+
+    // ── 模型同步 ──
+    /// 模型同步（对接 Fusion-Multi-Node）
+    Sync {
+        #[command(subcommand)]
+        action: cmd::sync::SyncCommands,
+    },
+
+    // ── 集群管理 ──
+    /// 集群管理
+    Cluster {
+        #[command(subcommand)]
+        action: cmd::cluster::ClusterCommands,
+    },
 }
 
 #[tokio::main]
@@ -178,6 +192,12 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Desk { action }) => {
             cmd::desk::handle_desk(action).await?;
+        }
+        Some(Commands::Sync { action }) => {
+            cmd::sync::handle_sync(action).await?;
+        }
+        Some(Commands::Cluster { action }) => {
+            cmd::cluster::handle_cluster(action).await?;
         }
     }
 
