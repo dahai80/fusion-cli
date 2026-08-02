@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
 use tabled::{Table, Tabled};
+use tracing::{info, error};
 
 #[derive(Subcommand)]
 pub enum ModelCommands {
@@ -33,6 +34,14 @@ pub enum ModelCommands {
         #[arg(long, default_value = "4bit")]
         target: String,
     },
+    /// 提交模型任务
+    Submit {
+        /// 任务描述
+        task: String,
+        /// 指定模型 ID
+        #[arg(long)]
+        model_id: Option<String>,
+    },
 }
 
 pub async fn handle_model(action: ModelCommands) -> Result<()> {
@@ -44,6 +53,7 @@ pub async fn handle_model(action: ModelCommands) -> Result<()> {
         ModelCommands::Clean => clean_models().await,
         ModelCommands::Convert { source, quant } => convert_model(source, quant).await,
         ModelCommands::Quant { name, target } => quantize_model(name, target).await,
+        ModelCommands::Submit { task, model_id } => submit_task(task, model_id).await,
     }
 }
 
@@ -98,7 +108,6 @@ async fn pull_model(name: String) -> Result<()> {
     println!("{} Pulling model: {}", "📥".bold(), name.cyan());
     println!("  {} This will download from Fusion-Model-Hub...", "⏳".blue());
 
-    // 模拟进度条
     let pb = indicatif::ProgressBar::new(100);
     pb.set_style(
         indicatif::ProgressStyle::default_bar()
@@ -229,6 +238,64 @@ async fn quantize_model(name: String, target: String) -> Result<()> {
     pb.finish_with_message(format!("✅ Quantized: {} → {}", name, target));
 
     Ok(())
+}
+
+async fn submit_task(task: String, model_id: Option<String>) -> Result<()> {
+    println!();
+    println!("{}", "📤 Submit Model Task".bold());
+    println!("  Task: {}", task.cyan());
+    if let Some(ref mid) = model_id {
+        println!("  Model ID: {}", mid.cyan());
+    } else {
+        println!("  Model ID: {} (default)", "auto".dimmed());
+    }
+    println!();
+
+    let base_url = get_base_url();
+    let url = format!("{}/api/models/tasks/submit", base_url);
+    info!(url = %url, task = %task, model_id = ?model_id, "Submitting model task");
+
+    let mut payload = serde_json::json!({
+        "task": task,
+    });
+    if let Some(mid) = &model_id {
+        payload["model_id"] = serde_json::Value::String(mid.clone());
+    }
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .json(&payload)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await;
+
+    match resp {
+        Ok(resp) if resp.status().is_success() => {
+            let body = resp.text().await?;
+            info!(body = %body, "Task submitted successfully");
+            println!("  {} Task submitted.", "✅".green());
+            match serde_json::from_str::<serde_json::Value>(&body) {
+                Ok(val) => println!("{}", serde_json::to_string_pretty(&val).unwrap_or(body)),
+                Err(_) => println!("{}", body),
+            }
+        }
+        Ok(resp) => {
+            let status = resp.status();
+            error!(status = %status, "Task submit failed");
+            anyhow::bail!("Failed to submit task: HTTP {}", status);
+        }
+        Err(e) => {
+            error!(error = %e, "Task submit connection error");
+            anyhow::bail!("Failed to connect to fusion-mlx: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+fn get_base_url() -> String {
+    std::env::var("FUSION_MLX_URL").unwrap_or_else(|_| "http://localhost:11434".to_string())
 }
 
 fn get_models_dir() -> std::path::PathBuf {
