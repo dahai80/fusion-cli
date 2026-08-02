@@ -208,15 +208,15 @@ src/
 
 ### Binding Layer: fusion-mlx Only
 
-The `mlx_bind` module is the **only** inference interface. It communicates exclusively with fusion-mlx via HTTP (OpenAI-compatible API at `localhost:8000`). The codebase has a compile-time assertion that prevents any other backend from being used.
+The `mlx_bind` module is the **only** inference interface. It communicates exclusively with fusion-mlx via HTTP (OpenAI-compatible API at `localhost:11434`). The codebase has a compile-time assertion that prevents any other backend from being used.
 
 ```rust
 // mlx_bind/mod.rs — hard-coded to fusion-mlx only
-const MLX_BASE_URL: &str = "http://localhost:8000/v1";
+const MLX_BASE_URL: &str = "http://localhost:11434/v1";
 
 pub fn assert_fusion_mlx_only() -> Result<()> {
     assert!(
-        MLX_BASE_URL.contains("localhost:8000"),
+        MLX_BASE_URL.contains("localhost:11434"),
         "Fusion-CLI only supports fusion-mlx"
     );
     Ok(())

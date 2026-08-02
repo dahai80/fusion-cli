@@ -96,12 +96,12 @@ pub async fn handle_chat(args: ChatArgs) -> Result<()> {
     println!("{} Starting chat with {} (ctx={}, temp={})",
         "💬".bold(), model.cyan(), args.inference.ctx.to_string().cyan(), args.inference.temperature.to_string().cyan());
     println!("{} Type your messages. Press Ctrl+C to exit.", "ℹ️".blue());
-    println!("{} All inference goes through fusion-mlx (http://localhost:8000/v1)", "🔌".dimmed());
+    println!("{} All inference goes through fusion-mlx (http://localhost:11434/v1)", "🔌".dimmed());
     println!();
 
     // 验证 fusion-mlx
     let client = reqwest::Client::new();
-    match client.get("http://localhost:8000/v1/models")
+    match client.get("http://localhost:11434/v1/models")
         .timeout(std::time::Duration::from_secs(2))
         .send().await
     {
@@ -137,7 +137,7 @@ pub async fn handle_chat(args: ChatArgs) -> Result<()> {
             "max_tokens": args.inference.ctx,
         });
 
-        match client.post("http://localhost:8000/v1/chat/completions")
+        match client.post("http://localhost:11434/v1/chat/completions")
             .json(&payload)
             .timeout(std::time::Duration::from_secs(args.inference.timeout))
             .send().await
@@ -232,7 +232,7 @@ pub async fn handle_embed(args: EmbedArgs) -> Result<()> {
         "input": text,
     });
 
-    match client.post("http://localhost:8000/v1/embeddings")
+    match client.post("http://localhost:11434/v1/embeddings")
         .json(&payload)
         .timeout(std::time::Duration::from_secs(30))
         .send().await
@@ -277,7 +277,7 @@ async fn call_fusion_mlx(model: &str, prompt: &str, args: &InferenceArgs) -> Res
         "max_tokens": args.ctx,
     });
 
-    let resp = client.post("http://localhost:8000/v1/chat/completions")
+    let resp = client.post("http://localhost:11434/v1/chat/completions")
         .json(&payload)
         .timeout(std::time::Duration::from_secs(args.timeout))
         .send().await?;
