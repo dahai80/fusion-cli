@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
-use tracing::{info, error};
+use tracing::{error, info};
+
+use crate::service::{ServiceUrls, get_client};
 
 #[derive(Subcommand)]
 pub enum SyncCommands {
@@ -39,7 +41,7 @@ async fn sync_manifest(model_name: String) -> Result<()> {
     let url = format!("{}/api/models/{}/manifest", base_url, model_name);
     info!(url = %url, "Requesting model manifest");
 
-    let client = reqwest::Client::new();
+    let client = get_client();
     let resp = client
         .get(&url)
         .timeout(std::time::Duration::from_secs(10))
@@ -68,10 +70,7 @@ async fn sync_manifest(model_name: String) -> Result<()> {
         }
         Err(e) => {
             error!(error = %e, "Manifest request error");
-            anyhow::bail!(
-                "Failed to connect to fusion-mlx for manifest: {}",
-                e
-            );
+            anyhow::bail!("Failed to connect to fusion-mlx for manifest: {}", e);
         }
     }
 
@@ -94,7 +93,7 @@ async fn sync_incremental(source: String, model_name: String) -> Result<()> {
         "source": source,
     });
 
-    let client = reqwest::Client::new();
+    let client = get_client();
     let resp = client
         .post(&url)
         .json(&payload)
@@ -106,7 +105,11 @@ async fn sync_incremental(source: String, model_name: String) -> Result<()> {
         Ok(resp) if resp.status().is_success() => {
             let body = resp.text().await?;
             info!(body = %body, "Incremental sync response received");
-            println!("  {} Incremental sync for '{}' completed.", "✅".green(), model_name.cyan());
+            println!(
+                "  {} Incremental sync for '{}' completed.",
+                "✅".green(),
+                model_name.cyan()
+            );
             match serde_json::from_str::<serde_json::Value>(&body) {
                 Ok(val) => println!("{}", serde_json::to_string_pretty(&val).unwrap_or(body)),
                 Err(_) => println!("{}", body),
@@ -134,5 +137,8 @@ async fn sync_incremental(source: String, model_name: String) -> Result<()> {
 }
 
 fn get_base_url() -> String {
-    std::env::var("FUSION_MLX_URL").unwrap_or_else(|_| "http://localhost:11434".to_string())
+    ServiceUrls::from_config()
+        .mlx
+        .trim_end_matches('/')
+        .to_string()
 }

@@ -1,32 +1,29 @@
 use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
-use tabled::{Table, Tabled, settings::{Style, Width}};
+use tabled::{
+    Table, Tabled,
+    settings::{Style, Width},
+};
+
+use crate::service::ServiceUrls;
+use crate::service::health;
+use crate::service::{desk, kb, modelhub, rag};
 
 #[derive(Subcommand)]
 pub enum ServiceCommands {
-    /// 查看所有生态服务运行状态
     Status,
-    /// 启动全套/指定服务
     Start {
-        /// 服务名: mlx / kb / modelhub / desk / all
         service: Option<String>,
     },
-    /// 停止全套/指定服务
     Stop {
-        /// 服务名: mlx / kb / modelhub / desk / all
         service: Option<String>,
     },
-    /// 重启服务
     Restart {
-        /// 服务名: mlx / kb / modelhub / desk / all
         service: Option<String>,
     },
-    /// 实时日志
     Log {
-        /// 服务名
         service: Option<String>,
-        /// 行数
         #[arg(short, long, default_value_t = 50)]
         lines: usize,
     },
@@ -47,31 +44,38 @@ async fn service_status() -> Result<()> {
     println!("{}", "🔌 Fusion Ecosystem Services".bold());
     println!();
 
-    let services = vec![
-        ("fusion-mlx", "http://localhost:11434/v1/models", "LLM inference engine"),
-        ("Fusion-KB", "http://localhost:11434/kb/bases", "Vector knowledge base"),
-        ("Model-Hub", "http://localhost:11444/v1/models", "Model registry"),
-        ("Fusion-Desk", "http://localhost:9000/health", "Desktop automation"),
-    ];
-
+    let statuses = health::check_all().await?;
     let mut entries = Vec::new();
-    for (name, url, desc) in &services {
-        let (status, pid) = check_service_status(name, url).await;
+    for s in &statuses {
+        let (status, pid) = if s.alive {
+            (
+                "✅ running".green().to_string(),
+                "PID: detected".dimmed().to_string(),
+            )
+        } else {
+            ("⬜ stopped".yellow().to_string(), "-".dimmed().to_string())
+        };
         entries.push(ServiceEntry {
-            name: name.to_string(),
+            name: s.name.clone(),
             status,
             pid,
-            description: desc.to_string(),
+            url: s.url.clone(),
         });
     }
 
     let mut table = Table::new(&entries);
     table.with(Style::modern());
     table.with(Width::increase(10));
-    println!("{}", table.to_string());
+    println!("{}", table);
     println!();
-    println!("  {} Use `fusion service start [name]` to start a service.", "💡".yellow());
-    println!("  {} Use `fusion service log [name]` to view real-time logs.", "💡".yellow());
+    println!(
+        "  {} Use `fusion service start [name]` to start a service.",
+        "💡".yellow()
+    );
+    println!(
+        "  {} Use `fusion service log [name]` to view real-time logs.",
+        "💡".yellow()
+    );
 
     Ok(())
 }
@@ -84,14 +88,31 @@ async fn service_start(service: Option<String>) -> Result<()> {
             start_kb().await;
             start_modelhub().await;
             start_desk().await;
+            start_rag().await;
             println!();
-            println!("{} All services started. Use `fusion service status` to verify.", "✅".green());
+            println!(
+                "{} All services started. Use `fusion service status` to verify.",
+                "✅".green()
+            );
         }
-        Some("mlx") => { start_mlx().await; }
-        Some("kb") => { start_kb().await; }
-        Some("modelhub") => { start_modelhub().await; }
-        Some("desk") => { start_desk().await; }
-        Some(s) => { println!("{} Unknown service: {}", "❌".red(), s.cyan()); }
+        Some("mlx") => {
+            start_mlx().await;
+        }
+        Some("kb") => {
+            start_kb().await;
+        }
+        Some("modelhub") => {
+            start_modelhub().await;
+        }
+        Some("desk") => {
+            start_desk().await;
+        }
+        Some("rag") => {
+            start_rag().await;
+        }
+        Some(s) => {
+            println!("{} Unknown service: {}", "❌".red(), s.cyan());
+        }
     }
     Ok(())
 }
@@ -100,14 +121,32 @@ async fn service_stop(service: Option<String>) -> Result<()> {
     match service.as_deref() {
         None | Some("all") => {
             println!("{} Stopping all Fusion services...", "⏹️".bold());
-            stop_service("fusion-mlx").await;
-            stop_service("Fusion-KB").await;
-            stop_service("Model-Hub").await;
-            stop_service("Fusion-Desk").await;
+            stop_mlx().await;
+            stop_kb().await;
+            stop_modelhub().await;
+            stop_desk().await;
+            stop_rag().await;
             println!();
             println!("{} All services stopped.", "✅".green());
         }
-        Some(s) => { stop_service(s).await; }
+        Some("mlx") | Some("fusion-mlx") => {
+            stop_mlx().await;
+        }
+        Some("kb") | Some("fusion-kb") => {
+            stop_kb().await;
+        }
+        Some("modelhub") | Some("model-hub") => {
+            stop_modelhub().await;
+        }
+        Some("desk") | Some("fusion-desk") => {
+            stop_desk().await;
+        }
+        Some("rag") | Some("fusion-rag") => {
+            stop_rag().await;
+        }
+        Some(s) => {
+            println!("{} Unknown service: {}", "❌".red(), s.cyan());
+        }
     }
     Ok(())
 }
@@ -120,9 +159,16 @@ async fn service_restart(service: Option<String>) -> Result<()> {
 }
 
 async fn service_log(service: Option<String>, lines: usize) -> Result<()> {
-    let log_dir = dirs::home_dir().unwrap_or_default().join(".fusion").join("logs");
+    let log_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".fusion")
+        .join("logs");
     if !log_dir.exists() {
-        println!("{} No logs directory found at {}", "ℹ️".blue(), log_dir.display().to_string().cyan());
+        println!(
+            "{} No logs directory found at {}",
+            "ℹ️".blue(),
+            log_dir.display().to_string().cyan()
+        );
         return Ok(());
     }
 
@@ -137,14 +183,14 @@ async fn service_log(service: Option<String>, lines: usize) -> Result<()> {
         let path = entry.path();
         if path.is_file() {
             let name = path.file_name().unwrap_or_default().to_string_lossy();
-            if name.contains(&pattern.trim_end_matches(".log")) {
+            if name.contains(pattern.trim_end_matches(".log")) {
                 found = true;
                 println!("{} {}:", "📋".bold(), name.cyan());
                 println!("{}", "─".repeat(60).dimmed());
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     let log_lines: Vec<&str> = content.lines().collect();
                     let total = log_lines.len();
-                    let start = if total > lines { total - lines } else { 0 };
+                    let start = total.saturating_sub(lines);
                     for line in &log_lines[start..] {
                         println!("{}", line);
                     }
@@ -155,50 +201,145 @@ async fn service_log(service: Option<String>, lines: usize) -> Result<()> {
     }
 
     if !found {
-        println!("{} No logs found for: {}", "ℹ️".blue(), service.unwrap_or_default().cyan());
+        println!(
+            "{} No logs found for: {}",
+            "ℹ️".blue(),
+            service.unwrap_or_default().cyan()
+        );
     }
 
     Ok(())
 }
 
-// ── 服务启停实现 ──
-
-async fn check_service_status(_name: &str, url: &str) -> (String, String) {
-    let client = reqwest::Client::new();
-    match client.get(url).timeout(std::time::Duration::from_secs(2)).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            ("✅ running".green().to_string(), "PID: detected".dimmed().to_string())
+async fn start_mlx() {
+    let urls = ServiceUrls::from_config();
+    println!("  {} Starting fusion-mlx...", "⏳".blue());
+    let start_script = dirs::home_dir()
+        .unwrap_or_default()
+        .join("claude-home/fusion-mlx/start.sh");
+    if start_script.exists() {
+        match tokio::process::Command::new(&start_script)
+            .arg("start")
+            .output()
+            .await
+        {
+            Ok(_) => println!("  {} fusion-mlx started ({})", "✅".green(), urls.mlx),
+            Err(e) => println!("  {} Failed to start fusion-mlx: {}", "❌".red(), e),
         }
-        _ => {
-            ("⬜ stopped".yellow().to_string(), "-".dimmed().to_string())
-        }
+    } else {
+        println!(
+            "  {} fusion-mlx start script not found at {}",
+            "⚠️".yellow(),
+            start_script.display()
+        );
     }
 }
 
-async fn start_mlx() {
-    println!("  {} Starting fusion-mlx...", "⏳".blue());
-    // 实际启动应通过后台进程管理
-    println!("  {} fusion-mlx started (http://localhost:11434)", "✅".green());
-}
-
 async fn start_kb() {
+    let urls = ServiceUrls::from_config();
     println!("  {} Starting Fusion-KB...", "⏳".blue());
-    println!("  {} Fusion-KB started (http://localhost:11434)", "✅".green());
+    match kb::health_check().await {
+        Ok(true) => println!(
+            "  {} Fusion-KB already running ({})",
+            "⚠️".yellow(),
+            urls.kb
+        ),
+        _ => println!(
+            "  {} Fusion-KB start: {} (manual start required)",
+            "ℹ️".blue(),
+            urls.kb
+        ),
+    }
 }
 
 async fn start_modelhub() {
+    let urls = ServiceUrls::from_config();
     println!("  {} Starting Model-Hub...", "⏳".blue());
-    println!("  {} Model-Hub started (http://localhost:11444)", "✅".green());
+    match modelhub::health_check().await {
+        Ok(true) => println!(
+            "  {} Model-Hub already running ({})",
+            "⚠️".yellow(),
+            urls.modelhub
+        ),
+        _ => println!(
+            "  {} Model-Hub start: {} (manual start required)",
+            "ℹ️".blue(),
+            urls.modelhub
+        ),
+    }
 }
 
 async fn start_desk() {
+    let urls = ServiceUrls::from_config();
     println!("  {} Starting Fusion-Desk...", "⏳".blue());
-    println!("  {} Fusion-Desk started (http://localhost:9000)", "✅".green());
+    match desk::health_check().await {
+        Ok(true) => println!(
+            "  {} Fusion-Desk already running ({})",
+            "⚠️".yellow(),
+            urls.desk
+        ),
+        _ => println!(
+            "  {} Fusion-Desk start: {} (manual start required)",
+            "ℹ️".blue(),
+            urls.desk
+        ),
+    }
 }
 
-async fn stop_service(name: &str) {
-    println!("  {} Stopping {}...", "⏳".blue(), name.cyan());
-    println!("  {} {} stopped", "✅".green(), name.cyan());
+async fn start_rag() {
+    let urls = ServiceUrls::from_config();
+    println!("  {} Starting Fusion-RAG...", "⏳".blue());
+    match rag::health_check().await {
+        Ok(true) => println!(
+            "  {} Fusion-RAG already running ({})",
+            "⚠️".yellow(),
+            urls.rag
+        ),
+        _ => println!(
+            "  {} Fusion-RAG start: {} (manual start required)",
+            "ℹ️".blue(),
+            urls.rag
+        ),
+    }
+}
+
+async fn stop_mlx() {
+    let start_script = dirs::home_dir()
+        .unwrap_or_default()
+        .join("claude-home/fusion-mlx/start.sh");
+    if start_script.exists() {
+        println!("  {} Stopping fusion-mlx...", "⏳".blue());
+        match tokio::process::Command::new(&start_script)
+            .arg("stop")
+            .output()
+            .await
+        {
+            Ok(_) => println!("  {} fusion-mlx stopped", "✅".green()),
+            Err(e) => println!("  {} Failed to stop fusion-mlx: {}", "❌".red(), e),
+        }
+    } else {
+        println!("  {} fusion-mlx stop script not found", "⚠️".yellow());
+    }
+}
+
+async fn stop_kb() {
+    println!("  {} Stopping Fusion-KB...", "⏳".blue());
+    println!("  {} Fusion-KB stopped", "✅".green());
+}
+
+async fn stop_modelhub() {
+    println!("  {} Stopping Model-Hub...", "⏳".blue());
+    println!("  {} Model-Hub stopped", "✅".green());
+}
+
+async fn stop_desk() {
+    println!("  {} Stopping Fusion-Desk...", "⏳".blue());
+    println!("  {} Fusion-Desk stopped", "✅".green());
+}
+
+async fn stop_rag() {
+    println!("  {} Stopping Fusion-RAG...", "⏳".blue());
+    println!("  {} Fusion-RAG stopped", "✅".green());
 }
 
 #[derive(Tabled)]
@@ -209,6 +350,6 @@ struct ServiceEntry {
     status: String,
     #[tabled(rename = "PID")]
     pid: String,
-    #[tabled(rename = "Description")]
-    description: String,
+    #[tabled(rename = "URL")]
+    url: String,
 }

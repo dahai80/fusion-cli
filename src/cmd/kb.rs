@@ -3,30 +3,33 @@ use clap::Subcommand;
 use colored::*;
 use tabled::{Table, Tabled};
 
+use crate::service::kb as kb_svc;
+
 #[derive(Subcommand)]
 pub enum KbCommands {
-    /// 列出所有本地知识库
     List,
-    /// 创建新知识库
-    Create { name: String },
-    /// 删除知识库
-    Delete { name: String },
-    /// 导入文件/文件夹到知识库
+    Create {
+        name: String,
+    },
+    Delete {
+        name: String,
+    },
     Ingest {
         name: String,
         #[arg(short, long)]
         path: String,
     },
-    /// 语义检索 + 问答
     Query {
         name: String,
         #[arg(short, long)]
         question: String,
     },
-    /// 清空知识库
-    Clear { name: String },
-    /// 查看知识库统计
-    Stat { name: String },
+    Clear {
+        name: String,
+    },
+    Stat {
+        name: String,
+    },
 }
 
 pub async fn handle_kb(action: KbCommands) -> Result<()> {
@@ -60,7 +63,11 @@ fn list_kb() -> Result<()> {
             let name = entry.file_name().to_string_lossy().to_string();
             let doc_count = std::fs::read_dir(&path).map(|d| d.count()).unwrap_or(0);
             let size = format_bytes(dir_size(&path));
-            entries.push(KbEntry { name, documents: doc_count.to_string(), size });
+            entries.push(KbEntry {
+                name,
+                documents: doc_count.to_string(),
+                size,
+            });
         }
     }
 
@@ -70,7 +77,10 @@ fn list_kb() -> Result<()> {
         let table = Table::new(&entries).to_string();
         println!("{}", table);
         println!();
-        println!("  Total: {} knowledge bases", entries.len().to_string().cyan());
+        println!(
+            "  Total: {} knowledge bases",
+            entries.len().to_string().cyan()
+        );
     }
 
     Ok(())
@@ -82,16 +92,21 @@ async fn create_kb(name: String) -> Result<()> {
         anyhow::bail!("Knowledge base '{}' already exists", name);
     }
     std::fs::create_dir_all(&kb_dir)?;
-    // 写入元数据
     let meta = serde_json::json!({
         "name": name,
         "created_at": chrono::Utc::now().to_rfc3339(),
         "document_count": 0,
         "status": "ready",
     });
-    std::fs::write(kb_dir.join("_meta.json"), serde_json::to_string_pretty(&meta)?)?;
+    std::fs::write(
+        kb_dir.join("_meta.json"),
+        serde_json::to_string_pretty(&meta)?,
+    )?;
     println!("{} Created knowledge base: {}", "✅".green(), name.cyan());
-    println!("  Use `fusion kb ingest {} --path=<dir>` to import documents.", name.cyan());
+    println!(
+        "  Use `fusion kb ingest {} --path=<dir>` to import documents.",
+        name.cyan()
+    );
     Ok(())
 }
 
@@ -101,7 +116,10 @@ async fn delete_kb(name: String) -> Result<()> {
         anyhow::bail!("Knowledge base '{}' not found", name);
     }
     let confirm = dialoguer::Confirm::new()
-        .with_prompt(format!("Delete knowledge base '{}'? This cannot be undone.", name.cyan()))
+        .with_prompt(format!(
+            "Delete knowledge base '{}'? This cannot be undone.",
+            name.cyan()
+        ))
         .default(false)
         .interact()?;
     if confirm {
@@ -116,7 +134,11 @@ async fn delete_kb(name: String) -> Result<()> {
 async fn ingest_kb(name: String, path: String) -> Result<()> {
     let kb_dir = get_kb_dir().join(&name);
     if !kb_dir.exists() {
-        anyhow::bail!("Knowledge base '{}' not found. Create it first with `fusion kb create {}`", name, name);
+        anyhow::bail!(
+            "Knowledge base '{}' not found. Create it first with `fusion kb create {}`",
+            name,
+            name
+        );
     }
 
     let source = std::path::Path::new(&path);
@@ -127,7 +149,6 @@ async fn ingest_kb(name: String, path: String) -> Result<()> {
     println!("{} Ingesting files into '{}'...", "📥".bold(), name.cyan());
     println!("  Source: {}", path.cyan());
 
-    // 扫描文件
     let mut files = Vec::new();
     if source.is_dir() {
         for entry in std::fs::read_dir(source)? {
@@ -153,7 +174,6 @@ async fn ingest_kb(name: String, path: String) -> Result<()> {
 
     for file in &files {
         let file_name = file.file_name().unwrap_or_default().to_string_lossy();
-        // 复制文件到知识库目录
         let dest = kb_dir.join(&*file_name);
         match std::fs::copy(file, &dest) {
             Ok(_) => {}
@@ -165,53 +185,44 @@ async fn ingest_kb(name: String, path: String) -> Result<()> {
 
     pb.finish_with_message(format!("✅ Ingested {} files into {}", files.len(), name));
 
-    // 更新元数据
     let meta_path = kb_dir.join("_meta.json");
-    if let Ok(content) = std::fs::read_to_string(&meta_path) {
-        if let Ok(mut meta) = serde_json::from_str::<serde_json::Value>(&content) {
-            meta["document_count"] = serde_json::json!(files.len());
-            meta["updated_at"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
-            let _ = std::fs::write(&meta_path, serde_json::to_string_pretty(&meta)?);
-        }
+    if let Ok(content) = std::fs::read_to_string(&meta_path)
+        && let Ok(mut meta) = serde_json::from_str::<serde_json::Value>(&content)
+    {
+        meta["document_count"] = serde_json::json!(files.len());
+        meta["updated_at"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
+        let _ = std::fs::write(&meta_path, serde_json::to_string_pretty(&meta)?);
     }
 
     Ok(())
 }
 
 async fn query_kb(name: String, question: String) -> Result<()> {
-    println!("{} Querying knowledge base '{}'...", "🔍".bold(), name.cyan());
+    println!(
+        "{} Querying knowledge base '{}'...",
+        "🔍".bold(),
+        name.cyan()
+    );
     println!("  Question: {}", question.dimmed());
     println!();
 
-    // 调用 Fusion-KB API
-    let client = reqwest::Client::new();
-    let payload = serde_json::json!({"question": question, "top_k": 5});
-
-    match client.post(format!("http://localhost:11434/kb/bases/{}/query", name))
-        .json(&payload)
-        .timeout(std::time::Duration::from_secs(30))
-        .send().await
-    {
-        Ok(resp) => {
-            if let Ok(data) = resp.json::<serde_json::Value>().await {
-                if let Some(answer) = data.get("answer").and_then(|v| v.as_str()) {
-                    println!("{}", "Answer:".green().bold());
-                    println!("{}", answer);
-                }
-                if let Some(sources) = data.get("sources").and_then(|v| v.as_array()) {
-                    if !sources.is_empty() {
-                        println!();
-                        println!("{} Sources:", "📚".blue());
-                        for source in sources {
-                            if let Some(content) = source.get("content").and_then(|v| v.as_str()) {
-                                let preview: String = content.chars().take(150).collect();
-                                println!("  • {}...", preview.dimmed());
-                            }
-                        }
+    match kb_svc::query(&name, &question, 5).await {
+        Ok(data) => {
+            if let Some(answer) = data.get("answer").and_then(|v| v.as_str()) {
+                println!("{}", "Answer:".green().bold());
+                println!("{}", answer);
+            }
+            if let Some(sources) = data.get("sources").and_then(|v| v.as_array())
+                && !sources.is_empty()
+            {
+                println!();
+                println!("{} Sources:", "📚".blue());
+                for source in sources {
+                    if let Some(content) = source.get("content").and_then(|v| v.as_str()) {
+                        let preview: String = content.chars().take(150).collect();
+                        println!("  • {}...", preview.dimmed());
                     }
                 }
-            } else {
-                println!("  {} No response from Fusion-KB", "❌".red());
             }
         }
         Err(e) => {
@@ -235,7 +246,6 @@ async fn clear_kb(name: String) -> Result<()> {
         .interact()?;
 
     if confirm {
-        // 删除所有文件，保留元数据
         for entry in std::fs::read_dir(&kb_dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -275,14 +285,12 @@ async fn stat_kb(name: String) -> Result<()> {
     println!("  Size:      {}", format_bytes(total_size).cyan());
     println!("  Location:  {}", kb_dir.display().to_string().cyan());
 
-    // 读取元数据
     let meta_path = kb_dir.join("_meta.json");
-    if let Ok(content) = std::fs::read_to_string(&meta_path) {
-        if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(created) = meta.get("created_at").and_then(|v| v.as_str()) {
-                println!("  Created:   {}", created.cyan());
-            }
-        }
+    if let Ok(content) = std::fs::read_to_string(&meta_path)
+        && let Ok(meta) = serde_json::from_str::<serde_json::Value>(&content)
+        && let Some(created) = meta.get("created_at").and_then(|v| v.as_str())
+    {
+        println!("  Created:   {}", created.cyan());
     }
 
     Ok(())

@@ -27,7 +27,10 @@ pub async fn handle_log(action: LogCommands) -> Result<()> {
 async fn view_log(lines: usize, path: Option<String>) -> Result<()> {
     let log_path = path.unwrap_or_else(|| {
         let home = dirs::home_dir().unwrap_or_default();
-        home.join(".fusion").join("fusion-cli.log").to_string_lossy().to_string()
+        home.join(".fusion")
+            .join("fusion-cli.log")
+            .to_string_lossy()
+            .to_string()
     });
 
     let path = std::path::Path::new(&log_path);
@@ -39,9 +42,14 @@ async fn view_log(lines: usize, path: Option<String>) -> Result<()> {
     let content = std::fs::read_to_string(path)?;
     let all_lines: Vec<&str> = content.lines().collect();
     let total = all_lines.len();
-    let start = if total > lines { total - lines } else { 0 };
+    let start = total.saturating_sub(lines);
 
-    println!("{} Last {} lines of {}:", "📋".bold(), lines.to_string().cyan(), log_path.cyan());
+    println!(
+        "{} Last {} lines of {}:",
+        "📋".bold(),
+        lines.to_string().cyan(),
+        log_path.cyan()
+    );
     println!("{}", "─".repeat(60).dimmed());
 
     for line in &all_lines[start..] {
@@ -50,7 +58,11 @@ async fn view_log(lines: usize, path: Option<String>) -> Result<()> {
 
     if start > 0 {
         println!("{}", "─".repeat(60).dimmed());
-        println!("{} ... and {} more lines (use --lines to show more)", "ℹ️".blue(), (total - lines).to_string().cyan());
+        println!(
+            "{} ... and {} more lines (use --lines to show more)",
+            "ℹ️".blue(),
+            (total - lines).to_string().cyan()
+        );
     }
 
     Ok(())
@@ -62,7 +74,11 @@ async fn clear_log() -> Result<()> {
 
     if log_path.exists() {
         std::fs::write(&log_path, "")?;
-        println!("{} Log file cleared: {}", "✅".green(), log_path.display().to_string().cyan());
+        println!(
+            "{} Log file cleared: {}",
+            "✅".green(),
+            log_path.display().to_string().cyan()
+        );
     } else {
         println!("{} No log file found.", "ℹ️".blue());
     }

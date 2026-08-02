@@ -1,7 +1,7 @@
-use std::str::FromStr;
 use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
+use std::str::FromStr;
 use tabled::{Table, Tabled};
 
 #[derive(Subcommand)]
@@ -44,9 +44,13 @@ fn desk_list() -> Result<()> {
     println!("{}", "🧹 Fusion-Desk Automation Templates".bold());
     println!();
 
-    let templates = vec![
+    let templates = [
         ("desktop-sort", "Desktop", "Organize desktop files by type"),
-        ("download-clean", "File", "Clean and archive Downloads folder"),
+        (
+            "download-clean",
+            "File",
+            "Clean and archive Downloads folder",
+        ),
         ("pdf-summarize", "AI", "Batch summarize PDF documents"),
         ("ai-classify", "AI", "AI-powered file classification"),
         ("ai-rename", "AI", "AI-powered batch rename"),
@@ -55,22 +59,29 @@ fn desk_list() -> Result<()> {
         ("duplicate-find", "System", "Find and clean duplicate files"),
     ];
 
-    let entries: Vec<DeskEntry> = templates.iter().map(|(id, cat, desc)| {
-        DeskEntry {
+    let entries: Vec<DeskEntry> = templates
+        .iter()
+        .map(|(id, cat, desc)| DeskEntry {
             id: id.to_string(),
             category: cat.to_string(),
             description: desc.to_string(),
-        }
-    }).collect();
+        })
+        .collect();
 
     let mut table = Table::new(&entries);
     table.with(tabled::settings::Style::modern());
     table.with(tabled::settings::Width::increase(10));
-    println!("{}", table.to_string());
+    println!("{}", table);
 
     println!();
-    println!("  {} Use `fusion desk run <name>` to execute a template.", "💡".yellow());
-    println!("  {} Use `fusion desk cron <name> --rule=\"0 21 * * *\"` to schedule.", "💡".yellow());
+    println!(
+        "  {} Use `fusion desk run <name>` to execute a template.",
+        "💡".yellow()
+    );
+    println!(
+        "  {} Use `fusion desk cron <name> --rule=\"0 21 * * *\"` to schedule.",
+        "💡".yellow()
+    );
 
     Ok(())
 }
@@ -113,7 +124,10 @@ async fn desk_run(name: String, params: Option<String>) -> Result<()> {
     println!("  Status:   {}", "success".green().bold());
     println!("  Time:     {:.1}s", 0.8);
     println!();
-    println!("  {} Use `fusion desk history` to view task history.", "💡".yellow());
+    println!(
+        "  {} Use `fusion desk history` to view task history.",
+        "💡".yellow()
+    );
 
     Ok(())
 }
@@ -124,26 +138,29 @@ fn desk_history() -> Result<()> {
     println!();
 
     // 模拟历史记录
-    let history = vec![
+    let history = [
         ("desktop-sort", "success", "2.3s", "2026-07-15 21:00"),
         ("download-clean", "success", "1.8s", "2026-07-15 20:00"),
         ("pdf-summarize", "failed", "5.2s", "2026-07-15 19:30"),
         ("disk-cleanup", "success", "0.9s", "2026-07-15 18:00"),
     ];
 
-    let entries: Vec<HistoryEntry> = history.iter().map(|(name, status, time, date)| {
-        let status_icon = match *status {
-            "success" => "✅".to_string(),
-            "failed" => "❌".to_string(),
-            _ => "⏳".to_string(),
-        };
-        HistoryEntry {
-            template: name.to_string(),
-            status: format!("{} {}", status_icon, status),
-            duration: time.to_string(),
-            executed_at: date.to_string(),
-        }
-    }).collect();
+    let entries: Vec<HistoryEntry> = history
+        .iter()
+        .map(|(name, status, time, date)| {
+            let status_icon = match *status {
+                "success" => "✅".to_string(),
+                "failed" => "❌".to_string(),
+                _ => "⏳".to_string(),
+            };
+            HistoryEntry {
+                template: name.to_string(),
+                status: format!("{} {}", status_icon, status),
+                duration: time.to_string(),
+                executed_at: date.to_string(),
+            }
+        })
+        .collect();
 
     let table = Table::new(&entries).to_string();
     println!("{}", table);
@@ -155,7 +172,12 @@ async fn desk_cron(name: String, rule: String) -> Result<()> {
     // 验证 cron 表达式
     match cron::Schedule::from_str(&rule) {
         Ok(_) => {
-            println!("{} Scheduled task: {} → {}", "🕐".bold(), name.cyan(), rule.cyan());
+            println!(
+                "{} Scheduled task: {} → {}",
+                "🕐".bold(),
+                name.cyan(),
+                rule.cyan()
+            );
             println!("  {} Cron expression validated.", "✅".green());
             println!("  The task will run automatically at the scheduled time.");
         }
