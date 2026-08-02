@@ -48,9 +48,9 @@ async fn service_status() -> Result<()> {
     println!();
 
     let services = vec![
-        ("fusion-mlx", "http://localhost:8000/v1/models", "LLM inference engine"),
+        ("fusion-mlx", "http://localhost:11434/v1/models", "LLM inference engine"),
         ("Fusion-KB", "http://localhost:11434/kb/bases", "Vector knowledge base"),
-        ("Model-Hub", "http://localhost:11435/v1/models", "Model registry"),
+        ("Model-Hub", "http://localhost:11444/v1/models", "Model registry"),
         ("Fusion-Desk", "http://localhost:9000/health", "Desktop automation"),
     ];
 
@@ -178,7 +178,7 @@ async fn check_service_status(_name: &str, url: &str) -> (String, String) {
 async fn start_mlx() {
     println!("  {} Starting fusion-mlx...", "⏳".blue());
     // 实际启动应通过后台进程管理
-    println!("  {} fusion-mlx started (http://localhost:8000)", "✅".green());
+    println!("  {} fusion-mlx started (http://localhost:11434)", "✅".green());
 }
 
 async fn start_kb() {
@@ -188,7 +188,7 @@ async fn start_kb() {
 
 async fn start_modelhub() {
     println!("  {} Starting Model-Hub...", "⏳".blue());
-    println!("  {} Model-Hub started (http://localhost:11435)", "✅".green());
+    println!("  {} Model-Hub started (http://localhost:11444)", "✅".green());
 }
 
 async fn start_desk() {

@@ -6,7 +6,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 /// fusion-mlx 服务地址
-const MLX_BASE_URL: &str = "http://localhost:8000/v1";
+const MLX_BASE_URL: &str = "http://localhost:11434/v1";
 
 /// 推理请求参数
 #[derive(Debug, Serialize, Deserialize)]
@@ -144,8 +144,8 @@ pub async fn get_server_stats() -> Result<serde_json::Value> {
 pub fn assert_fusion_mlx_only() -> Result<()> {
     // 编译时断言：MLX_BASE_URL 必须是 fusion-mlx 地址
     assert!(
-        MLX_BASE_URL.contains("localhost:8000"),
-        "Fusion-CLI only supports fusion-mlx (http://localhost:8000)"
+        MLX_BASE_URL.contains("localhost:11434"),
+        "Fusion-CLI only supports fusion-mlx (http://localhost:11434)"
     );
     Ok(())
 }
@@ -161,6 +161,6 @@ mod tests {
 
     #[test]
     fn test_mlx_base_url() {
-        assert_eq!(MLX_BASE_URL, "http://localhost:8000/v1");
+        assert_eq!(MLX_BASE_URL, "http://localhost:11434/v1");
     }
 }

@@ -7,7 +7,7 @@ use serde::Deserialize;
 pub mod model_hub {
     use super::*;
 
-    const HUB_URL: &str = "http://localhost:11435";
+    const HUB_URL: &str = "http://localhost:11444";
 
     /// 模型信息
     #[derive(Debug, Deserialize)]

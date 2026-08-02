@@ -29,7 +29,7 @@ fn print_version(name: &str, version: &str) {
 async fn mlx_version() -> Result<String> {
     let client = reqwest::Client::new();
     let resp = client
-        .get("http://localhost:8000/v1/models")
+        .get("http://localhost:11434/v1/models")
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await?;

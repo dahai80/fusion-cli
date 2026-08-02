@@ -86,7 +86,7 @@ pub async fn run() -> Result<()> {
 
     // 5. fusion-mlx 检测
     println!("{}", "🎯 fusion-mlx Check".bold());
-    check_service("fusion-mlx", "http://localhost:8000/v1/models").await;
+    check_service("fusion-mlx", "http://localhost:11434/v1/models").await;
     println!();
 
     // 6. Fusion-KB 检测
