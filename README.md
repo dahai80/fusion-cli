@@ -2,6 +2,10 @@
   <h1>⚡ Fusion-CLI</h1>
   <p><strong>One CLI, Control All Fusion-MLX Local AI Ecosystem.</strong></p>
   <p><em>A single binary to manage models, inference, knowledge bases, benchmarks, automation, and services — all powered by fusion-mlx.</em></p>
+
+<p>
+  <strong>English</strong> | <a href="README_CN.md">中文</a>
+</p>
 </div>
 
 <p align="center">
