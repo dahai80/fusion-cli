@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.2-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.3-blue" alt="Version">
 </p>
 
 ---

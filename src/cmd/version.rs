@@ -9,7 +9,7 @@ pub async fn run() -> Result<()> {
         "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.".bold()
     );
     println!();
-    print_version("fusion-cli", "0.1.0");
+    print_version("fusion-cli", env!("CARGO_PKG_VERSION"));
     print_version("fusion-mlx", "checking...");
     print_version("Fusion-KB", "checking...");
     print_version("Model-Hub", "checking...");

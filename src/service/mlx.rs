@@ -88,7 +88,9 @@ fn stats_url() -> String {
 
 pub async fn health_check() -> Result<bool> {
     let client = get_client();
-    let url = format!("{}/models", base_url());
+    let base: &str = &base_url();
+    let base = base.trim_end_matches("/v1").trim_end_matches('/');
+    let url = format!("{}/health", base);
     match client
         .get(&url)
         .timeout(Duration::from_secs(2))

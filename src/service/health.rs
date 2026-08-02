@@ -44,7 +44,7 @@ pub async fn check_all() -> Result<Vec<ServiceStatus>> {
 pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
     let urls = ServiceUrls::from_config();
     let checks: Vec<(&str, &str, &str)> = vec![
-        ("MLX", &urls.mlx, "/v1/models"),
+        ("MLX", &urls.mlx, "/health"),
         ("KB", &urls.kb, "/kb/bases"),
         ("ModelHub", &urls.modelhub, "/v1/models"),
         ("RAG", &urls.rag, "/health"),
