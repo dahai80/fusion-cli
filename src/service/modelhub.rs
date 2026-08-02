@@ -21,7 +21,6 @@ fn base_url() -> String {
         .to_string()
 }
 
-#[allow(dead_code)]
 pub async fn list_models() -> Result<Vec<ModelEntry>> {
     let client = get_client();
     let url = format!("{}/v1/models", base_url());
@@ -35,11 +34,10 @@ pub async fn list_models() -> Result<Vec<ModelEntry>> {
     Ok(data)
 }
 
-#[allow(dead_code)]
 pub async fn search(name: &str) -> Result<Vec<ModelEntry>> {
     let client = get_client();
     let url = format!("{}/v1/models?q={}", base_url(), name);
-    info!(url = %url, "Searching ModelHub");
+    info!(url = %url, query = name, "Searching ModelHub");
     let resp = client
         .get(&url)
         .timeout(Duration::from_secs(5))
@@ -47,6 +45,27 @@ pub async fn search(name: &str) -> Result<Vec<ModelEntry>> {
         .await?;
     let data: Vec<ModelEntry> = resp.json().await.unwrap_or_default();
     Ok(data)
+}
+
+pub async fn download_model(name: &str) -> Result<String> {
+    let client = get_client();
+    let url = format!("{}/v1/models/{}/download", base_url(), name);
+    info!(url = %url, model = name, "Requesting model download");
+    let resp = client
+        .post(&url)
+        .timeout(Duration::from_secs(300))
+        .send()
+        .await?;
+
+    if resp.status().is_success() {
+        let body: serde_json::Value = resp.json().await?;
+        let path = body["path"].as_str().unwrap_or("unknown").to_string();
+        Ok(path)
+    } else {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Download failed: HTTP {} — {}", status, body)
+    }
 }
 
 pub async fn health_check() -> Result<bool> {

@@ -11,7 +11,11 @@ pub enum ModelCommands {
     /// 列出本地所有 MLX 模型
     List,
     /// 拉取官方/社区 MLX 模型
-    Pull { name: String },
+    Pull {
+        name: String,
+        #[arg(long, default_value = "https://hf-mirror.com")]
+        mirror: String,
+    },
     /// 查看模型详细信息
     Info { name: String },
     /// 删除本地模型
@@ -32,9 +36,7 @@ pub enum ModelCommands {
     },
     /// 提交模型任务
     Submit {
-        /// 任务描述
         task: String,
-        /// 指定模型 ID
         #[arg(long)]
         model_id: Option<String>,
     },
@@ -43,13 +45,13 @@ pub enum ModelCommands {
 pub async fn handle_model(action: ModelCommands) -> Result<()> {
     match action {
         ModelCommands::List => list_models().await,
-        ModelCommands::Pull { name } => pull_model(name).await,
-        ModelCommands::Info { name } => model_info(name).await,
-        ModelCommands::Delete { name } => delete_model(name).await,
+        ModelCommands::Pull { name, mirror } => pull_model(&name, &mirror).await,
+        ModelCommands::Info { name } => model_info(&name).await,
+        ModelCommands::Delete { name } => delete_model(&name).await,
         ModelCommands::Clean => clean_models().await,
-        ModelCommands::Convert { source, quant } => convert_model(source, quant).await,
-        ModelCommands::Quant { name, target } => quantize_model(name, target).await,
-        ModelCommands::Submit { task, model_id } => submit_task(task, model_id).await,
+        ModelCommands::Convert { source, quant } => convert_model(&source, &quant).await,
+        ModelCommands::Quant { name, target } => quantize_model(&name, &target).await,
+        ModelCommands::Submit { task, model_id } => submit_task(&task, model_id).await,
     }
 }
 
@@ -108,43 +110,118 @@ async fn list_models() -> Result<()> {
     Ok(())
 }
 
-async fn pull_model(name: String) -> Result<()> {
+async fn pull_model(name: &str, mirror: &str) -> Result<()> {
     println!("{} Pulling model: {}", "📥".bold(), name.cyan());
-    println!(
-        "  {} This will download from Fusion-Model-Hub...",
-        "⏳".blue()
-    );
 
-    let pb = indicatif::ProgressBar::new(100);
-    pb.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template("{msg} [{bar:40.cyan/blue}] {pos}%")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-    pb.set_message(format!("Downloading {}...", name));
+    let models_dir = get_models_dir();
+    let target_dir = models_dir.join(name);
 
-    for i in 0..=100 {
-        pb.set_position(i);
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    if target_dir.exists() {
+        println!(
+            "  {} Model already exists at {}",
+            "⚠".yellow(),
+            target_dir.display()
+        );
+        let confirm = dialoguer::Confirm::new()
+            .with_prompt("Re-download and overwrite?")
+            .default(false)
+            .interact()?;
+        if !confirm {
+            println!("  {} Cancelled.", "ℹ️".blue());
+            return Ok(());
+        }
     }
-    pb.finish_with_message(format!("✅ Downloaded: {}", name));
 
-    println!(
-        "  {} Model saved to: {}",
-        "📂".cyan(),
-        get_models_dir().join(&name).display()
+    println!("  Mirror: {}", mirror.cyan());
+    println!();
+
+    let hub_alive = crate::service::modelhub::health_check()
+        .await
+        .unwrap_or(false);
+    if hub_alive {
+        info!(model = name, "Attempting ModelHub download");
+        println!("  {} Downloading via Fusion-Model-Hub...", "⏳".blue());
+        match crate::service::modelhub::download_model(name).await {
+            Ok(path) => {
+                println!("  {} Downloaded to: {}", "✅".green(), path.cyan());
+                println!(
+                    "  {} Use `fusion chat --model={}` to start chatting.",
+                    "💡".yellow(),
+                    name.cyan()
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                println!("  {} ModelHub download failed: {}", "⚠".yellow(), e);
+                info!(error = %e, "ModelHub download failed, falling back to huggingface-cli");
+            }
+        }
+    }
+
+    info!(
+        model = name,
+        mirror = mirror,
+        "Downloading via huggingface-cli"
     );
     println!(
-        "  {} Use `fusion chat --model={}` to start chatting.",
-        "💡".yellow(),
-        name.cyan()
+        "  {} Downloading via huggingface-cli (mirror: {})...",
+        "⏳".blue(),
+        mirror
     );
+
+    let model_id = name;
+    let hf_mirror = if mirror.is_empty() {
+        "https://hf-mirror.com".to_string()
+    } else {
+        mirror.to_string()
+    };
+
+    let output = std::process::Command::new("huggingface-cli")
+        .env("HF_ENDPOINT", &hf_mirror)
+        .args([
+            "download",
+            model_id,
+            "--local-dir",
+            &target_dir.to_string_lossy(),
+        ])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            println!(
+                "  {} Downloaded to: {}",
+                "✅".green(),
+                target_dir.display().to_string().cyan()
+            );
+            println!(
+                "  {} Use `fusion chat --model={}` to start chatting.",
+                "💡".yellow(),
+                name.cyan()
+            );
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            error!(stderr = %stderr, "huggingface-cli download failed");
+            anyhow::bail!(
+                "Download failed: huggingface-cli exited with code {:?}\n{}",
+                out.status.code(),
+                stderr
+            );
+        }
+        Err(e) => {
+            error!(error = %e, "huggingface-cli not found");
+            anyhow::bail!(
+                "huggingface-cli not found. Install with: pip install huggingface_hub\n\
+                 Or start Fusion-Model-Hub for API-based downloads."
+            );
+        }
+    }
+
     Ok(())
 }
 
-async fn model_info(name: String) -> Result<()> {
-    let model_dir = get_models_dir().join(&name);
+async fn model_info(name: &str) -> Result<()> {
+    let model_dir = get_models_dir().join(name);
     if !model_dir.exists() {
         anyhow::bail!("Model '{}' not found at {}", name, model_dir.display());
     }
@@ -187,8 +264,8 @@ async fn model_info(name: String) -> Result<()> {
     Ok(())
 }
 
-async fn delete_model(name: String) -> Result<()> {
-    let model_dir = get_models_dir().join(&name);
+async fn delete_model(name: &str) -> Result<()> {
+    let model_dir = get_models_dir().join(name);
     if !model_dir.exists() {
         anyhow::bail!("Model '{}' not found", name);
     }
@@ -229,63 +306,160 @@ async fn clean_models() -> Result<()> {
     Ok(())
 }
 
-async fn convert_model(source: String, quant: String) -> Result<()> {
+async fn convert_model(source: &str, quant: &str) -> Result<()> {
     println!("{} Converting model: {}", "🔄".bold(), source.cyan());
     println!("  Target quantization: {}", quant.cyan());
-    println!(
-        "  {} This operation uses fusion-mlx for conversion.",
-        "⏳".blue()
-    );
 
-    let pb = indicatif::ProgressBar::new(100);
-    pb.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template("{msg} [{bar:40.cyan/blue}] {pos}%")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-    pb.set_message("Converting...");
+    let mlx_path =
+        std::path::PathBuf::from(std::env::var("FUSION_MLX_PATH").unwrap_or_else(|_| {
+            dirs::home_dir()
+                .map(|h| {
+                    h.join("claude-home/fusion-mlx")
+                        .to_string_lossy()
+                        .to_string()
+                })
+                .unwrap_or_default()
+        }));
 
-    for i in 0..=100 {
-        pb.set_position(i);
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let convert_script = mlx_path.join("convert.py");
+    if !convert_script.exists() {
+        let fallback_script = mlx_path.join("scripts").join("convert.py");
+        if !fallback_script.exists() {
+            anyhow::bail!(
+                "Conversion script not found at {} or {}.\n\
+                 Set FUSION_MLX_PATH or install fusion-mlx.",
+                convert_script.display(),
+                fallback_script.display()
+            );
+        }
     }
-    pb.finish_with_message("✅ Conversion complete");
+
+    println!("  {} Running conversion via fusion-mlx...", "⏳".blue());
+    info!(source = source, quant = quant, "Running model conversion");
+
+    let output = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "mlx_lm.convert",
+            "--hf-path",
+            source,
+            "--quantize",
+            quant,
+            "--mlx-path",
+            &get_models_dir()
+                .join(source.replace('/', "_"))
+                .to_string_lossy(),
+        ])
+        .env(
+            "HF_ENDPOINT",
+            std::env::var("HF_ENDPOINT").unwrap_or_else(|_| "https://hf-mirror.com".to_string()),
+        )
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            println!("  {} Conversion complete.", "✅".green());
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if !stdout.trim().is_empty() {
+                println!("{}", stdout);
+            }
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            error!(stderr = %stderr, "Conversion failed");
+            anyhow::bail!(
+                "Conversion failed (exit {:?}):\n{}",
+                out.status.code(),
+                stderr
+            );
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to run conversion");
+            anyhow::bail!(
+                "Failed to run mlx_lm.convert. Ensure mlx-lm is installed: pip install mlx-lm\n\
+                 Error: {}",
+                e
+            );
+        }
+    }
 
     Ok(())
 }
 
-async fn quantize_model(name: String, target: String) -> Result<()> {
+async fn quantize_model(name: &str, target: &str) -> Result<()> {
     println!(
         "{} Quantizing model: {} → {}",
         "🔧".bold(),
         name.cyan(),
         target.cyan()
     );
-    println!(
-        "  {} This operation uses fusion-mlx native quantization.",
-        "⏳".blue()
-    );
 
-    let pb = indicatif::ProgressBar::new(100);
-    pb.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template("{msg} [{bar:40.cyan/blue}] {pos}%")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-    pb.set_message("Quantizing...");
-
-    for i in 0..=100 {
-        pb.set_position(i);
-        tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+    let model_dir = get_models_dir().join(name);
+    if !model_dir.exists() {
+        anyhow::bail!(
+            "Model '{}' not found at {}. Use `fusion model pull {}` first.",
+            name,
+            model_dir.display(),
+            name
+        );
     }
-    pb.finish_with_message(format!("✅ Quantized: {} → {}", name, target));
+
+    let output_name = format!("{}-{}", name, target);
+    let output_dir = get_models_dir().join(&output_name);
+
+    println!("  {} Running quantization via mlx_lm...", "⏳".blue());
+    info!(model = name, target = target, "Running model quantization");
+
+    let output = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "mlx_lm.convert",
+            "--hf-path",
+            &model_dir.to_string_lossy(),
+            "--quantize",
+            target,
+            "--mlx-path",
+            &output_dir.to_string_lossy(),
+        ])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            println!(
+                "  {} Quantized: {} → {}",
+                "✅".green(),
+                name.cyan(),
+                output_name.cyan()
+            );
+            println!("  Output: {}", output_dir.display());
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if !stdout.trim().is_empty() {
+                println!("{}", stdout);
+            }
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            error!(stderr = %stderr, "Quantization failed");
+            anyhow::bail!(
+                "Quantization failed (exit {:?}):\n{}",
+                out.status.code(),
+                stderr
+            );
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to run quantization");
+            anyhow::bail!(
+                "Failed to run mlx_lm.convert. Ensure mlx-lm is installed: pip install mlx-lm\n\
+                 Error: {}",
+                e
+            );
+        }
+    }
 
     Ok(())
 }
 
-async fn submit_task(task: String, model_id: Option<String>) -> Result<()> {
+async fn submit_task(task: &str, model_id: Option<String>) -> Result<()> {
     println!();
     println!("{}", "📤 Submit Model Task".bold());
     println!("  Task: {}", task.cyan());

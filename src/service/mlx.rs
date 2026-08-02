@@ -24,14 +24,12 @@ pub struct Message {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct InferenceResponse {
     pub choices: Vec<Choice>,
     pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct Choice {
     pub message: ResponseMessage,
     pub finish_reason: Option<String>,
@@ -43,15 +41,13 @@ pub struct ResponseMessage {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
 }
 
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ModelInfo {
     pub id: String,
     pub object: String,
@@ -60,20 +56,17 @@ pub struct ModelInfo {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ChatChunk {
     pub choices: Vec<ChunkChoice>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ChunkChoice {
     pub delta: ChunkDelta,
     pub finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ChunkDelta {
     pub content: Option<String>,
 }
@@ -82,7 +75,6 @@ fn base_url() -> String {
     ServiceUrls::from_config().mlx_api()
 }
 
-#[allow(dead_code)]
 fn stats_url() -> String {
     ServiceUrls::from_config()
         .mlx
@@ -108,7 +100,6 @@ pub async fn health_check() -> Result<bool> {
     }
 }
 
-#[allow(dead_code)]
 pub async fn list_models() -> Result<Vec<ModelInfo>> {
     let client = get_client();
     let url = format!("{}/models", base_url());
@@ -136,7 +127,6 @@ pub async fn chat_completion(request: &InferenceRequest) -> Result<InferenceResp
     Ok(response)
 }
 
-#[allow(dead_code)]
 pub async fn chat_completion_stream(request: &InferenceRequest) -> Result<reqwest::Response> {
     let mut stream_request = request.clone();
     stream_request.stream = Some(true);
@@ -170,10 +160,10 @@ pub async fn create_embedding(model: &str, input: &str) -> Result<Vec<f64>> {
     Ok(embedding)
 }
 
-#[allow(dead_code)]
 pub async fn get_server_stats() -> Result<serde_json::Value> {
     let client = get_client();
     let url = format!("{}/stats", stats_url());
+    info!(url = %url, "Fetching MLX server stats");
     let resp = client
         .get(&url)
         .timeout(Duration::from_secs(5))
@@ -183,7 +173,53 @@ pub async fn get_server_stats() -> Result<serde_json::Value> {
     Ok(data)
 }
 
-#[allow(dead_code)]
+pub struct BenchResult {
+    pub tokens_generated: u32,
+    pub elapsed_secs: f64,
+    pub tokens_per_sec: f64,
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+}
+
+pub async fn generate_tokens(model: &str, max_tokens: u32) -> Result<BenchResult> {
+    let request = InferenceRequest {
+        model: model.to_string(),
+        messages: vec![Message {
+            role: "user".to_string(),
+            content: "Write a detailed essay about artificial intelligence and its impact on society. Include examples, analysis, and future predictions.".to_string(),
+        }],
+        temperature: Some(0.7),
+        max_tokens: Some(max_tokens),
+        stream: None,
+    };
+    let start = std::time::Instant::now();
+    let response = chat_completion(&request).await?;
+    let elapsed = start.elapsed();
+    let elapsed_secs = elapsed.as_secs_f64();
+    let prompt_tokens = response
+        .usage
+        .as_ref()
+        .map(|u| u.prompt_tokens)
+        .unwrap_or(0);
+    let completion_tokens = response
+        .usage
+        .as_ref()
+        .map(|u| u.completion_tokens)
+        .unwrap_or(0);
+    let tokens_per_sec = if elapsed_secs > 0.0 && completion_tokens > 0 {
+        completion_tokens as f64 / elapsed_secs
+    } else {
+        0.0
+    };
+    Ok(BenchResult {
+        tokens_generated: completion_tokens,
+        elapsed_secs,
+        tokens_per_sec,
+        prompt_tokens,
+        completion_tokens,
+    })
+}
+
 pub fn assert_fusion_mlx_only() -> Result<()> {
     let urls = ServiceUrls::from_config();
     let base = urls.mlx;

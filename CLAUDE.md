@@ -7,11 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build --release          # Binary: target/release/fusion
 cargo run -- <subcommand>      # Run in dev mode
-cargo test                     # Only 2 inline unit tests in src/mlx_bind/mod.rs
+cargo test                     # Unit tests in src/service/mlx.rs
 cargo check                    # Type-check without building
 ```
 
-No dedicated lint config. Compiler currently emits dead-code warnings from unused modules.
+No dedicated lint config. Some dead-code warnings from unused struct fields.
 
 ## Architecture
 
@@ -20,40 +20,39 @@ Rust 2024 edition CLI binary using clap derive macros. Single entry point dispat
 ```
 main.rs          → Cli struct (global args) + Commands enum (subcommands) → dispatch
 cmd/             → One file per subcommand group, each with its own *Commands enum + handle_*()
-mlx_bind/        → Core binding: OpenAI-compatible HTTP client to fusion-mlx (localhost:11434/v1)
+service/         → Unified HTTP service layer with global reqwest::Client and typed APIs
+agent/           → AI Agent engine: loop, context, permissions, tool calling
+tools/           → Tool registry with built-in tools (list_models, model_info, health, bench_speed)
 config/          → FusionConfig: TOML config at ~/.fusion/config.toml
-ecosystem/       → Stub HTTP clients for Model-Hub/KB/Desk (currently UNUSED — cmd/ makes direct reqwest calls)
-system/          → System info helpers (currently UNUSED)
-utils/logger.rs  → tracing-subscriber init with EnvFilter (respects RUST_LOG, defaults to fusion_cli=info)
+utils/           → logger (tracing-subscriber) + output (JSON format support)
 ```
 
 ### Key Design Constraint
 
-`mlx_bind/mod.rs` hard-codes `MLX_BASE_URL = "http://localhost:11434/v1"` with a compile-time assertion — this CLI is fusion-mlx only, no other backends.
-
-### Known Issue: Dead Modules
-
-`ecosystem/` and `system/` modules are defined but never called — `cmd/` modules make inline `reqwest` calls instead. This causes ~23 dead-code warnings. Several Cargo.toml dependencies (`sha2`, `hex`, `uuid`, `glob`, `csv`, `clap_complete`) are also unused.
+All MLX inference goes through `service/mlx.rs` which uses `ServiceUrls::from_config()` for the base URL. Default: `http://localhost:11434/v1`. This CLI is fusion-mlx only, no other backends.
 
 ## Subcommand Structure
 
 Each `cmd/*.rs` follows the same pattern: a clap `Subcommand` enum + an async `handle_*()` function that matches on variants. The main subcommand groups are:
 
-- `version`, `doctor`, `log` — standalone commands
+- `version`, `doctor`, `init`, `completions` — standalone commands
 - `config` — list/get/set/reset for ~/.fusion/config.toml
-- `model` — list/pull/info/delete/clean/convert/quant
-- `chat`, `run`, `code`, `embed` — inference (all go through mlx_bind)
+- `model` — list/pull/info/delete/clean/convert/quant (real operations: ModelHub API + huggingface-cli fallback + mlx_lm shell-out)
+- `chat`, `run`, `code`, `embed` — inference (SSE streaming via eventsource-stream, all go through mlx_bind)
 - `kb` — knowledge base CRUD + ingest/query
-- `bench` — speed/mem/ctx/auto/report benchmarking
+- `bench` — speed/mem/ctx/auto/report benchmarking (real MLX API calls via generate_tokens)
 - `service` — status/start/stop/restart/log for ecosystem services
 - `rag` — start/stop/status/search/list for RAG service
-- `desk` — list/run/history/cron/stop for desktop automation
+- `desk` — list/run/history/cron/stop for desktop automation (real API calls)
+- `agent` — AI agent with tool calling (prompt, model, permission tier)
+- `sync` — model sync
+- `cluster` — cluster management
 
-Global args: `--offline`, `--verbose`, `--mlx-ctx`, `--mlx-cache`, `--no-gpu`
+Global args: `--offline`, `--verbose`, `--mlx-ctx`, `--mlx-cache`, `--no-gpu`, `--format`
 
 ## Config & Data Paths
 
-- Config: `~/.fusion/config.toml` (sections: model, kb, mlx, log)
+- Config: `~/.fusion/config.toml` (sections: model, kb, mlx, modelhub, rag, desk, log)
 - Models: `~/.fusion/models/`
 - KB data: `~/.fusion/kb/`
 - Logs: `~/.fusion/logs/` and `~/.fusion/fusion-cli.log`

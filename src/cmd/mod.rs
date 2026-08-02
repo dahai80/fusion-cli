@@ -1,8 +1,10 @@
 pub mod bench;
 pub mod chat;
 pub mod cluster;
+pub mod completions;
 pub mod desk;
 pub mod doctor;
+pub mod init;
 pub mod kb;
 pub mod log;
 pub mod model;

@@ -3,6 +3,7 @@ use clap::Subcommand;
 use colored::*;
 use std::str::FromStr;
 use tabled::{Table, Tabled};
+use tracing::info;
 
 #[derive(Subcommand)]
 pub enum DeskCommands {
@@ -15,7 +16,10 @@ pub enum DeskCommands {
         params: Option<String>,
     },
     /// 查看自动化任务历史
-    History,
+    History {
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
     /// 配置定时任务
     Cron {
         name: String,
@@ -31,47 +35,78 @@ pub enum DeskCommands {
 
 pub async fn handle_desk(action: DeskCommands) -> Result<()> {
     match action {
-        DeskCommands::List => desk_list(),
-        DeskCommands::Run { name, params } => desk_run(name, params).await,
-        DeskCommands::History => desk_history(),
-        DeskCommands::Cron { name, rule } => desk_cron(name, rule).await,
+        DeskCommands::List => desk_list().await,
+        DeskCommands::Run { name, params } => desk_run(&name, params).await,
+        DeskCommands::History { limit } => desk_history(limit).await,
+        DeskCommands::Cron { name, rule } => desk_cron(&name, &rule).await,
         DeskCommands::Stop { task_id } => desk_stop(task_id).await,
     }
 }
 
-fn desk_list() -> Result<()> {
+async fn desk_list() -> Result<()> {
     println!();
     println!("{}", "🧹 Fusion-Desk Automation Templates".bold());
     println!();
 
-    let templates = [
-        ("desktop-sort", "Desktop", "Organize desktop files by type"),
-        (
-            "download-clean",
-            "File",
-            "Clean and archive Downloads folder",
-        ),
-        ("pdf-summarize", "AI", "Batch summarize PDF documents"),
-        ("ai-classify", "AI", "AI-powered file classification"),
-        ("ai-rename", "AI", "AI-powered batch rename"),
-        ("disk-cleanup", "System", "Clean disk caches and temp files"),
-        ("file-collect", "File", "Collect project files by type"),
-        ("duplicate-find", "System", "Find and clean duplicate files"),
-    ];
+    let alive = crate::service::desk::health_check().await.unwrap_or(false);
+    if !alive {
+        println!("  {} Fusion-Desk service is not running.", "⚠".yellow());
+        println!("  Start it with: fusion service start desk");
+        println!();
+        println!("  Available built-in templates:");
+        let fallback = [
+            ("desktop-sort", "Desktop", "Organize desktop files by type"),
+            (
+                "download-clean",
+                "File",
+                "Clean and archive Downloads folder",
+            ),
+            ("pdf-summarize", "AI", "Batch summarize PDF documents"),
+            ("ai-classify", "AI", "AI-powered file classification"),
+            ("ai-rename", "AI", "AI-powered batch rename"),
+            ("disk-cleanup", "System", "Clean disk caches and temp files"),
+            ("file-collect", "File", "Collect project files by type"),
+            ("duplicate-find", "System", "Find and clean duplicate files"),
+        ];
+        let entries: Vec<DeskEntry> = fallback
+            .iter()
+            .map(|(id, cat, desc)| DeskEntry {
+                id: id.to_string(),
+                category: cat.to_string(),
+                description: desc.to_string(),
+            })
+            .collect();
+        let mut table = Table::new(&entries);
+        table.with(tabled::settings::Style::modern());
+        table.with(tabled::settings::Width::increase(10));
+        println!("{}", table);
+        return Ok(());
+    }
 
-    let entries: Vec<DeskEntry> = templates
-        .iter()
-        .map(|(id, cat, desc)| DeskEntry {
-            id: id.to_string(),
-            category: cat.to_string(),
-            description: desc.to_string(),
-        })
-        .collect();
-
-    let mut table = Table::new(&entries);
-    table.with(tabled::settings::Style::modern());
-    table.with(tabled::settings::Width::increase(10));
-    println!("{}", table);
+    match crate::service::desk::list_templates().await {
+        Ok(templates) => {
+            if templates.is_empty() {
+                println!("  {} No templates available.", "ℹ️".blue());
+            } else {
+                let entries: Vec<DeskEntry> = templates
+                    .iter()
+                    .map(|t| DeskEntry {
+                        id: t.id.clone(),
+                        category: t.name.clone(),
+                        description: t.description.clone(),
+                    })
+                    .collect();
+                let mut table = Table::new(&entries);
+                table.with(tabled::settings::Style::modern());
+                table.with(tabled::settings::Width::increase(10));
+                println!("{}", table);
+            }
+        }
+        Err(e) => {
+            info!(error = %e, "Failed to list desk templates");
+            println!("  {} Failed to fetch templates: {}", "⚠".yellow(), e);
+        }
+    }
 
     println!();
     println!(
@@ -86,92 +121,98 @@ fn desk_list() -> Result<()> {
     Ok(())
 }
 
-async fn desk_run(name: String, params: Option<String>) -> Result<()> {
+async fn desk_run(name: &str, params: Option<String>) -> Result<()> {
     println!("{} Running automation: {}", "🚀".bold(), name.cyan());
     if let Some(p) = &params {
         println!("  Params: {}", p.dimmed());
     }
     println!();
 
-    let pb = indicatif::ProgressBar::new(100);
-    pb.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template("{msg} [{bar:40.green/cyan}] {pos}%")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-    pb.set_message(format!("Executing {}...", name));
-
-    let steps = vec![
-        ("Scanning files", 20),
-        ("Processing...", 50),
-        ("AI analysis (via fusion-mlx)", 70),
-        ("Organizing output", 90),
-        ("Complete", 100),
-    ];
-
-    for (msg, pos) in &steps {
-        pb.set_position(*pos);
-        pb.set_message(*msg);
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let alive = crate::service::desk::health_check().await.unwrap_or(false);
+    if !alive {
+        anyhow::bail!(
+            "Fusion-Desk service is not running. Start it with: fusion service start desk"
+        );
     }
 
-    pb.finish_with_message(format!("✅ {} completed successfully", name));
+    info!(template = name, params = ?params, "Running desk automation task");
 
-    println!();
-    println!("{}", "📊 Results".bold());
-    println!("  Template: {}", name.cyan());
-    println!("  Status:   {}", "success".green().bold());
-    println!("  Time:     {:.1}s", 0.8);
-    println!();
-    println!(
-        "  {} Use `fusion desk history` to view task history.",
-        "💡".yellow()
-    );
+    match crate::service::desk::run_task(name).await {
+        Ok(task_id) => {
+            if task_id.is_empty() {
+                println!("  {} Task submitted (no task ID returned).", "✅".green());
+            } else {
+                println!("  {} Task submitted: {}", "✅".green(), task_id.cyan());
+            }
+            println!();
+            println!(
+                "  {} Use `fusion desk history` to view task history.",
+                "💡".yellow()
+            );
+        }
+        Err(e) => {
+            info!(error = %e, "Desk task failed");
+            anyhow::bail!("Failed to run desk task: {}", e);
+        }
+    }
 
     Ok(())
 }
 
-fn desk_history() -> Result<()> {
+async fn desk_history(limit: u32) -> Result<()> {
     println!();
     println!("{}", "📋 Automation Task History".bold());
     println!();
 
-    // 模拟历史记录
-    let history = [
-        ("desktop-sort", "success", "2.3s", "2026-07-15 21:00"),
-        ("download-clean", "success", "1.8s", "2026-07-15 20:00"),
-        ("pdf-summarize", "failed", "5.2s", "2026-07-15 19:30"),
-        ("disk-cleanup", "success", "0.9s", "2026-07-15 18:00"),
-    ];
+    let alive = crate::service::desk::health_check().await.unwrap_or(false);
+    if !alive {
+        println!(
+            "  {} Fusion-Desk service is not running. No history available.",
+            "⚠".yellow()
+        );
+        return Ok(());
+    }
 
-    let entries: Vec<HistoryEntry> = history
-        .iter()
-        .map(|(name, status, time, date)| {
-            let status_icon = match *status {
-                "success" => "✅".to_string(),
-                "failed" => "❌".to_string(),
-                _ => "⏳".to_string(),
-            };
-            HistoryEntry {
-                template: name.to_string(),
-                status: format!("{} {}", status_icon, status),
-                duration: time.to_string(),
-                executed_at: date.to_string(),
+    match crate::service::desk::get_history(limit).await {
+        Ok(history) => {
+            if history.is_empty() {
+                println!("  {} No task history found.", "ℹ️".blue());
+            } else {
+                let entries: Vec<HistoryEntry> = history
+                    .iter()
+                    .map(|h| {
+                        let status_icon = match h.status.as_str() {
+                            "success" | "completed" => "✅".to_string(),
+                            "failed" | "error" => "❌".to_string(),
+                            "running" => "▶️".to_string(),
+                            _ => "⏳".to_string(),
+                        };
+                        HistoryEntry {
+                            template: h.task.clone(),
+                            status: format!("{} {}", status_icon, h.status),
+                            duration: format!("{} → {}", h.started_at, h.finished_at),
+                            task_id: h.id.clone(),
+                        }
+                    })
+                    .collect();
+                let mut table = Table::new(&entries);
+                table.with(tabled::settings::Style::modern());
+                table.with(tabled::settings::Width::increase(10));
+                println!("{}", table);
             }
-        })
-        .collect();
-
-    let table = Table::new(&entries).to_string();
-    println!("{}", table);
+        }
+        Err(e) => {
+            info!(error = %e, "Failed to fetch desk history");
+            println!("  {} Failed to fetch history: {}", "⚠".yellow(), e);
+        }
+    }
 
     Ok(())
 }
 
-async fn desk_cron(name: String, rule: String) -> Result<()> {
-    // 验证 cron 表达式
-    match cron::Schedule::from_str(&rule) {
-        Ok(_) => {
+async fn desk_cron(name: &str, rule: &str) -> Result<()> {
+    match cron::Schedule::from_str(rule) {
+        Ok(schedule) => {
             println!(
                 "{} Scheduled task: {} → {}",
                 "🕐".bold(),
@@ -179,6 +220,9 @@ async fn desk_cron(name: String, rule: String) -> Result<()> {
                 rule.cyan()
             );
             println!("  {} Cron expression validated.", "✅".green());
+            if let Some(next) = schedule.upcoming(chrono::Local).next() {
+                println!("  Next run: {}", next.to_string().cyan());
+            }
             println!("  The task will run automatically at the scheduled time.");
         }
         Err(e) => {
@@ -192,7 +236,22 @@ async fn desk_cron(name: String, rule: String) -> Result<()> {
 
 async fn desk_stop(task_id: Option<String>) -> Result<()> {
     match task_id {
-        Some(id) => println!("{} Stopping task: {}", "⏹️".yellow(), id.cyan()),
+        Some(id) => {
+            println!("{} Stopping task: {}", "⏹️".yellow(), id.cyan());
+            let alive = crate::service::desk::health_check().await.unwrap_or(false);
+            if !alive {
+                anyhow::bail!("Fusion-Desk service is not running. Cannot stop task.");
+            }
+            match crate::service::desk::stop_task(&id).await {
+                Ok(true) => println!("  {} Task {} stopped.", "✅".green(), id.cyan()),
+                Ok(false) => println!(
+                    "  {} Task {} could not be stopped (not running?).",
+                    "⚠".yellow(),
+                    id.cyan()
+                ),
+                Err(e) => anyhow::bail!("Failed to stop task: {}", e),
+            }
+        }
         None => println!("{} No running tasks to stop.", "ℹ️".blue()),
     }
     Ok(())
@@ -214,8 +273,8 @@ struct HistoryEntry {
     template: String,
     #[tabled(rename = "Status")]
     status: String,
-    #[tabled(rename = "Duration")]
-    duration: String,
     #[tabled(rename = "Time")]
-    executed_at: String,
+    duration: String,
+    #[tabled(rename = "Task ID")]
+    task_id: String,
 }

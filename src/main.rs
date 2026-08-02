@@ -1,16 +1,18 @@
 // Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.
 // V0.1 MVP — Pure Rust, macOS Apple Silicon native, single binary.
 
+mod agent;
 mod cmd;
 mod config;
 mod service;
+mod tools;
 mod utils;
 
 use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "fusion")]
-#[command(version = "0.1.0")]
+#[command(version = "0.2.0")]
 #[command(about = "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.", long_about = None)]
 struct Cli {
     /// 强制离线模式（默认开启）
@@ -33,6 +35,10 @@ struct Cli {
     #[arg(global = true, long)]
     no_gpu: bool,
 
+    /// 输出格式: text 或 json
+    #[arg(global = true, long, default_value = "text", value_name = "FORMAT")]
+    format: String,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -44,6 +50,13 @@ enum Commands {
     Version,
     /// 环境自检
     Doctor,
+    /// 初始化 Fusion 环境
+    Init,
+    /// 生成 Shell 补全脚本
+    Completions {
+        /// Shell 类型: bash / zsh / fish / elvish / powershell
+        shell: String,
+    },
     /// 全局配置管理
     Config {
         #[command(subcommand)]
@@ -132,6 +145,19 @@ enum Commands {
         #[command(subcommand)]
         action: cmd::cluster::ClusterCommands,
     },
+
+    // ── AI Agent ──
+    /// AI Agent 模式（带工具调用）
+    Agent {
+        /// 输入提示
+        prompt: String,
+        /// 模型名称
+        #[arg(short, long)]
+        model: Option<String>,
+        /// 权限级别: sandbox / ask / auto
+        #[arg(short, long, default_value = "ask")]
+        permission: String,
+    },
 }
 
 #[tokio::main]
@@ -140,6 +166,13 @@ async fn main() -> anyhow::Result<()> {
 
     // 初始化日志
     utils::logger::init_logger(cli.verbose);
+
+    // 设置输出格式
+    if cli.format == "json" {
+        unsafe {
+            std::env::set_var("FUSION_OUTPUT_FORMAT", "json");
+        }
+    }
 
     // 执行命令
     match cli.command {
@@ -154,6 +187,12 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Doctor) => {
             cmd::doctor::run().await?;
+        }
+        Some(Commands::Init) => {
+            cmd::init::run_init().await?;
+        }
+        Some(Commands::Completions { shell }) => {
+            cmd::completions::run_completions(&shell)?;
         }
         Some(Commands::Config { action }) => {
             config::handle_config(action).await?;
@@ -196,6 +235,17 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Cluster { action }) => {
             cmd::cluster::handle_cluster(action).await?;
+        }
+        Some(Commands::Agent {
+            prompt,
+            model,
+            permission,
+        }) => {
+            let model_name = model.unwrap_or_else(|| {
+                let config = config::load_config();
+                config.model.default_path.clone()
+            });
+            agent::run_agent(&model_name, &prompt, &permission).await?;
         }
     }
 

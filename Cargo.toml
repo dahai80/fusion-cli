@@ -1,6 +1,6 @@
 [package]
 name = "fusion-cli"
-version = "0.1.1"
+version = "0.2.0"
 description = "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem."
 edition = "2024"
 authors = ["Fusion-MLX Team"]
@@ -20,6 +20,8 @@ clap = { version = "4", features = ["derive", "env"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
+eventsource-stream = "0.2"
+async-trait = "0.1"
 once_cell = "1"
 
 # Serialization
@@ -31,6 +33,9 @@ toml = "0.8"
 dialoguer = "0.11"
 indicatif = "0.17"
 tabled = "0.18"
+ratatui = "0.29"
+crossterm = "0.28"
+clap_complete = "4"
 
 # Logging
 tracing = "0.1"

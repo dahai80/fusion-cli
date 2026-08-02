@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/status-beta-yellow" alt="Beta">
+  <img src="https://img.shields.io/badge/version-0.2.0-blue" alt="Version">
 </p>
 
 ---
@@ -19,13 +19,15 @@
 **Fusion-CLI** is the unified command-line entry point for the entire Fusion-MLX local AI ecosystem. It provides a single binary to manage all aspects of your local AI setup:
 
 - **Model Management** — List, pull, convert, quantize, delete MLX models
-- **Inference** — Chat, single-prompt, code analysis, embeddings (all via fusion-mlx)
+- **Inference** — Chat (SSE streaming), single-prompt, code analysis, embeddings (all via fusion-mlx)
 - **Knowledge Base** — Create, ingest, query, manage Fusion-KB knowledge bases
 - **RAG Service** — Start/stop Fusion-RAG, semantic search, knowledge base listing
-- **Benchmarking** — Speed tests, memory profiling, context stress testing, auto-optimization
+- **Benchmarking** — Real speed tests, memory profiling, context stress testing, auto-optimization
 - **Service Control** — Start/stop/restart all Fusion ecosystem services with real process management
-- **Desktop Automation** — Run Fusion-Desk templates from the terminal
-- **Configuration** — Global settings, environment diagnostics, log management
+- **Desktop Automation** — Run Fusion-Desk templates, view history, stop tasks
+- **AI Agent** — Natural language with tool calling (sandbox/ask/auto permission tiers)
+- **Shell Completions** — Generate bash/zsh/fish/elvish/powershell completion scripts
+- **Init** — One-command environment setup
 
 ### Core Design Philosophy
 
@@ -34,22 +36,10 @@
 | **One backend only** | 🔒 100% fusion-mlx — no omlx, no ollama, no OpenAI |
 | **100% offline** | No telemetry, no phoning home, no cloud APIs |
 | **macOS native** | Apple Silicon optimized, single binary, no Python/Node deps |
-| **Scriptable** | Every command supports `--quiet` for shell scripts and cron jobs |
+| **Scriptable** | Every command supports `--format=json` for programmatic output |
 | **Ecosystem unified** | One CLI to rule them all: Desk, Code, KB, Bench, Model-Hub |
 | **Configurable URLs** | All service URLs read from `~/.fusion/config.toml`, no hardcoding |
 | **Connection pooling** | Global `reqwest::Client` with persistent connections across all commands |
-
-### Ecosystem Position
-
-```
-fusion-mlx (inference engine, Metal, KV Cache, quantization)
-        ↓
-Model-Hub / KB / Bench (data & evaluation layer)
-        ↓
-Fusion-CLI (UNIFIED COMMAND ENTRY POINT)
-        ↓
-Desk / Code / Doc / Agent-Studio (application layer)
-```
 
 ---
 
@@ -68,6 +58,9 @@ cargo build --release
 # Install to PATH
 cp target/release/fusion /usr/local/bin/
 
+# Initialize environment
+fusion init
+
 # Verify
 fusion --version
 fusion doctor
@@ -85,17 +78,20 @@ fusion model list
 # Pull a model
 fusion model pull llama3-8b-instruct-4bit
 
-# Start a chat
+# Start a chat (SSE streaming by default)
 fusion chat --model=llama3-8b-instruct-4bit
 
-# Run benchmark
-fusion bench speed --model=llama3-8b-instruct-4bit
+# Run benchmark (real inference)
+fusion bench speed --model=llama3-8b-instruct-4bit --runs=3
 
-# Start all services
-fusion service start all
+# Use AI agent
+fusion agent "list my models and benchmark the fastest one" --model=llama3-8b-instruct-4bit
 
-# Check service status
-fusion service status
+# JSON output
+fusion model list --format=json
+
+# Shell completions
+fusion completions zsh
 ```
 
 ---
@@ -108,33 +104,49 @@ fusion service status
 |---------|-------------|
 | `fusion version` | Show version info for all ecosystem components |
 | `fusion doctor` | Full environment diagnostic (system, MLX, KB, ModelHub, RAG, Desk) |
+| `fusion init` | Initialize Fusion environment (dirs, config, health check) |
+| `fusion completions <shell>` | Generate shell completion scripts (bash/zsh/fish/elvish/powershell) |
 | `fusion config list` | View all configuration |
 | `fusion config set <key> <value>` | Set a configuration value |
 | `fusion log` | View real-time logs |
 | `fusion log clear` | Clear all logs |
+
+**Global flags**: `--offline`, `--verbose`, `--mlx-ctx`, `--mlx-cache`, `--no-gpu`, `--format=json`
 
 ### Model Management (`fusion model`)
 
 | Command | Description |
 |---------|-------------|
 | `list` | List all local MLX models |
-| `pull <name>` | Download a model from Model-Hub |
+| `pull <name> [--mirror=URL]` | Download model (ModelHub API or huggingface-cli fallback) |
 | `info <name>` | Show model details (size, quantization, params) |
 | `delete <name>` | Remove a model |
 | `clean` | Clean model cache |
-| `convert <path> --quant=4/8/fp16` | Convert third-party model to MLX |
-| `quant <name> --target=4bit` | Re-quantize an existing MLX model |
+| `convert <source> --quant=4/8/fp16` | Convert third-party model to MLX via mlx_lm |
+| `quant <name> --target=4bit` | Re-quantize an existing MLX model via mlx_lm |
 
 ### Inference (`fusion chat / run / code / embed`)
 
 | Command | Description |
 |---------|-------------|
-| `chat --model=<name>` | Interactive terminal chat |
+| `chat --model=<name>` | Interactive terminal chat (SSE streaming) |
 | `run --model=<name> --prompt="..."` | Single-prompt inference |
 | `code --model=<name> --file=path --task=explain` | Code-specific analysis |
 | `embed --text="..." / --dir=path` | Generate embeddings for Fusion-KB |
 
-**Common parameters**: `--ctx`, `--temperature`, `--top-p`, `--no-cache`, `--quiet`, `--timeout`
+**Common parameters**: `--ctx`, `--temperature`, `--top-p`, `--no-cache`, `--quiet`, `--timeout`, `--no-stream`
+
+### AI Agent (`fusion agent`)
+
+| Command | Description |
+|---------|-------------|
+| `agent <prompt>` | Natural language with automatic tool calling |
+| `agent <prompt> --model=<name>` | Use specific model |
+| `agent <prompt> --permission=sandbox` | Read-only tools only |
+| `agent <prompt> --permission=ask` | Ask before dangerous operations (default) |
+| `agent <prompt> --permission=auto` | Full auto-pilot |
+
+**Available tools**: `list_models`, `model_info`, `health`, `bench_speed`
 
 ### Knowledge Base (`fusion kb`)
 
@@ -162,11 +174,11 @@ fusion service status
 
 | Command | Description |
 |---------|-------------|
-| `speed --model=<name>` | Token generation speed test |
-| `mem --model=<name>` | Memory usage profiling |
-| `ctx --model=<name> --max-ctx=8192` | Context length stress test |
-| `auto --model=<name>` | Auto-parameter optimization |
-| `report --model=<name> --output=report.md` | Export benchmark report |
+| `speed --model=<name> [--tokens=128] [--runs=1]` | Real token generation speed test |
+| `mem --model=<name>` | Memory + MLX server stats |
+| `ctx --model=<name> --max-ctx=8192 [--step=256]` | Context length stress test (real inference) |
+| `auto --model=<name>` | Auto-parameter optimization (real benchmarks) |
+| `report --model=<name> --output=report.md` | Export benchmark report with real data |
 
 ### Service Control (`fusion service`)
 
@@ -182,11 +194,11 @@ fusion service status
 
 | Command | Description |
 |---------|-------------|
-| `list` | List all automation templates |
+| `list` | List automation templates (API or fallback) |
 | `run <name>` | Execute an automation template |
-| `history` | View task execution history |
+| `history [--limit=20]` | View task execution history |
 | `cron <name> --rule="0 21 * * *"` | Schedule a recurring task |
-| `stop [task-id]` | Stop a running task |
+| `stop --task-id=<id>` | Stop a running task |
 
 ---
 
@@ -199,40 +211,40 @@ src/
 │   ├── mod.rs
 │   ├── version.rs       # fusion version
 │   ├── doctor.rs        # fusion doctor
+│   ├── init.rs          # fusion init (V0.2)
+│   ├── completions.rs   # fusion completions (V0.2)
 │   ├── log.rs           # fusion log
-│   ├── model.rs         # fusion model (list/pull/info/delete/clean/convert/quant)
-│   ├── chat.rs          # fusion chat/run/code/embed
+│   ├── model.rs         # fusion model (real pull/convert/quant)
+│   ├── chat.rs          # fusion chat/run/code/embed (SSE streaming)
 │   ├── kb.rs            # fusion kb
-│   ├── bench.rs         # fusion bench
+│   ├── bench.rs         # fusion bench (real benchmarks)
 │   ├── service.rs       # fusion service
 │   ├── rag.rs           # fusion rag
-│   ├── desk.rs          # fusion desk
+│   ├── desk.rs          # fusion desk (real API calls)
 │   ├── sync.rs          # fusion sync (model sync)
 │   └── cluster.rs       # fusion cluster
-├── service/             # Unified service layer (V0.2)
+├── service/             # Unified service layer
 │   ├── mod.rs           # Global reqwest::Client + ServiceUrls + check_url()
-│   ├── mlx.rs           # MLX inference client (chat, embed, stream, health)
+│   ├── mlx.rs           # MLX inference client (chat, stream, embed, bench, health)
 │   ├── kb.rs            # Fusion-KB client (list, query, health)
-│   ├── modelhub.rs      # Model-Hub client (list, search, health)
+│   ├── modelhub.rs      # Model-Hub client (list, search, download, health)
 │   ├── rag.rs           # Fusion-RAG client (search, health, list KBs)
-│   ├── desk.rs          # Fusion-Desk client (run_task, health)
+│   ├── desk.rs          # Fusion-Desk client (templates, tasks, history, stop, health)
 │   └── health.rs        # Unified health check (check_all, check_named)
+├── agent/               # AI Agent engine (V0.2)
+│   ├── mod.rs           # Agent loop with tool calling
+│   ├── context.rs       # Context manager (message history, trimming)
+│   ├── loop_engine.rs   # Loop statistics tracking
+│   └── permission.rs    # Permission tiers (sandbox/ask/auto)
+├── tools/               # Tool registry (V0.2)
+│   └── mod.rs           # ToolExecutor + built-in tools
 ├── config/              # Global configuration management
 │   └── mod.rs           # FusionConfig: TOML at ~/.fusion/config.toml
 └── utils/               # Logging, utilities
     ├── mod.rs
-    └── logger.rs
+    ├── logger.rs
+    └── output.rs        # JSON output support (V0.2)
 ```
-
-### Service Layer Design (V0.2)
-
-The `service/` module provides a unified HTTP client layer replacing the old `ecosystem/`, `mlx_bind/`, and `system/` modules:
-
-- **Global `reqwest::Client`** — Connection pooling via `once_cell::Lazy<Arc<Client>>`, eliminating per-call `Client::new()`
-- **Configurable URLs** — All service endpoints read from `~/.fusion/config.toml` via `ServiceUrls::from_config()`
-- **Typed APIs** — Each service module (mlx, kb, modelhub, rag, desk) exposes typed request/response structs and async functions
-- **SSE Streaming** — `mlx::chat_completion_stream()` returns raw `reqwest::Response` for streaming token delivery
-- **Unified Health** — `health::check_all()` probes all 5 ecosystem services in one call
 
 ### Service URL Configuration
 
@@ -243,47 +255,6 @@ The `service/` module provides a unified HTTP client layer replacing the old `ec
 | Model-Hub | `http://localhost:11444` | `modelhub.base_url` |
 | Fusion-RAG | `http://localhost:11436` | `rag.base_url` |
 | Fusion-Desk | `http://localhost:9000` | `desk.base_url` |
-
-### Config Structure
-
-```toml
-[model]
-default_model = "llama3-8b-instruct-4bit"
-default_path = "~/.fusion/models"
-
-[mlx]
-base_url = "http://localhost:11434"
-default_ctx = 4096
-enable_cache = true
-cache_size = "4GB"
-max_batch_size = 8
-
-[kb]
-base_url = "http://localhost:11434"
-default_path = "~/.fusion/kb"
-
-[modelhub]
-base_url = "http://localhost:11444"
-
-[rag]
-base_url = "http://localhost:11436"
-
-[desk]
-base_url = "http://localhost:9000"
-
-[log]
-level = "info"
-path = "~/.fusion/logs"
-```
-
----
-
-## 🔒 Security
-
-- **100% Offline** — Zero network requests to external services
-- **No Telemetry** — No analytics, no phoning home, no update checks
-- **Local Only** — All models, data, and vectors stay on your machine
-- **No Third-Party Backends** — Hard-coded to fusion-mlx only
 
 ---
 
@@ -299,7 +270,7 @@ path = "~/.fusion/logs"
 - [x] Desktop automation: list, run, history, cron, stop
 - [x] Rust single binary, no runtime dependencies
 
-### V0.2 (In Progress)
+### V0.2 ✅
 - [x] Unified service layer (`src/service/`) replacing dead `ecosystem/`, `mlx_bind/`, `system/`
 - [x] Global `reqwest::Client` connection pooling
 - [x] Configurable service URLs from `config.toml`
@@ -307,15 +278,21 @@ path = "~/.fusion/logs"
 - [x] SSE streaming support (`chat_completion_stream`)
 - [x] Real MLX start/stop via `~/claude-home/fusion-mlx/start.sh`
 - [x] RAG service integration (start/stop/status/search/list)
-- [x] Zero build warnings
-- [ ] Real bench benchmarks (currently simulated)
-- [ ] Real model pull via Model-Hub API
-- [ ] Real model convert/quantize via MLX API
-- [ ] Real desk operations
-- [ ] Agent mode (natural language → tool calling)
-- [ ] TUI dashboard
+- [x] Real bench benchmarks via MLX API (`generate_tokens`)
+- [x] Real model pull (ModelHub API + huggingface-cli fallback)
+- [x] Real model convert/quantize via `mlx_lm.convert`
+- [x] Real desk operations (API calls, history, stop)
+- [x] Agent mode (natural language → tool calling with permission tiers)
+- [x] Tool registry (list_models, model_info, health, bench_speed)
+- [x] `--format=json` global output mode
+- [x] `fusion init` one-command setup
+- [x] `fusion completions` shell completion generation
+- [x] Context manager with message trimming
+- [x] Loop statistics tracking
 
 ### V0.3 (Future)
+- [ ] TUI dashboard (ratatui)
+- [ ] Gateway integration and service discovery
 - [ ] Distributed node management
 - [ ] One-click ecosystem deployment
 - [ ] Full CI/CD local AI pipeline

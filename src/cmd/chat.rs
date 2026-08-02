@@ -1,6 +1,9 @@
 use anyhow::Result;
 use clap::Args;
 use colored::*;
+use eventsource_stream::Eventsource;
+use futures_util::StreamExt;
+use tracing::info;
 
 use crate::service::{ServiceUrls, mlx};
 
@@ -29,6 +32,9 @@ pub struct InferenceArgs {
 
     #[arg(long, default_value_t = 120)]
     pub timeout: u64,
+
+    #[arg(long, default_value_t = true)]
+    pub stream: bool,
 }
 
 #[derive(Args, Clone)]
@@ -129,22 +135,48 @@ pub async fn handle_chat(args: ChatArgs) -> Result<()> {
             messages: conversation.clone(),
             temperature: Some(args.inference.temperature),
             max_tokens: Some(args.inference.ctx),
-            stream: None,
+            stream: Some(args.inference.stream),
         };
 
-        match mlx::chat_completion(&request).await {
-            Ok(response) => {
-                if let Some(choice) = response.choices.first() {
-                    let content = choice.message.content.as_deref().unwrap_or("(no response)");
-                    println!("\n{} {}", "Assistant:".green().bold(), content);
+        if args.inference.stream {
+            match stream_chat(&request).await {
+                Ok(content) => {
                     conversation.push(mlx::Message {
                         role: "assistant".to_string(),
-                        content: content.to_string(),
+                        content: content.clone(),
                     });
                 }
+                Err(e) => {
+                    info!(error = %e, "Stream failed, falling back to non-streaming");
+                    match mlx::chat_completion(&request).await {
+                        Ok(response) => {
+                            if let Some(choice) = response.choices.first() {
+                                let content =
+                                    choice.message.content.as_deref().unwrap_or("(no response)");
+                                println!("\n{} {}", "Assistant:".green().bold(), content);
+                                conversation.push(mlx::Message {
+                                    role: "assistant".to_string(),
+                                    content: content.to_string(),
+                                });
+                            }
+                        }
+                        Err(e2) => println!("\n{} Error: {}", "❌".red(), e2),
+                    }
+                }
             }
-            Err(e) => {
-                println!("\n{} Error: {}", "❌".red(), e);
+        } else {
+            match mlx::chat_completion(&request).await {
+                Ok(response) => {
+                    if let Some(choice) = response.choices.first() {
+                        let content = choice.message.content.as_deref().unwrap_or("(no response)");
+                        println!("\n{} {}", "Assistant:".green().bold(), content);
+                        conversation.push(mlx::Message {
+                            role: "assistant".to_string(),
+                            content: content.to_string(),
+                        });
+                    }
+                }
+                Err(e) => println!("\n{} Error: {}", "❌".red(), e),
             }
         }
         println!();
@@ -152,6 +184,35 @@ pub async fn handle_chat(args: ChatArgs) -> Result<()> {
 
     println!("{} Chat ended.", "👋".yellow());
     Ok(())
+}
+
+async fn stream_chat(request: &mlx::InferenceRequest) -> Result<String> {
+    let response = mlx::chat_completion_stream(request).await?;
+    print!("{} ", "Assistant:".green().bold());
+    let mut full_content = String::new();
+    let mut stream = response.bytes_stream().eventsource();
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(event) => {
+                if event.data == "[DONE]" {
+                    break;
+                }
+                if let Ok(chunk) = serde_json::from_str::<mlx::ChatChunk>(&event.data)
+                    && let Some(choice) = chunk.choices.first()
+                    && let Some(content) = &choice.delta.content
+                {
+                    print!("{}", content);
+                    full_content.push_str(content);
+                }
+            }
+            Err(e) => {
+                info!(error = %e, "SSE stream error");
+                break;
+            }
+        }
+    }
+    println!();
+    Ok(full_content)
 }
 
 pub async fn handle_run(args: RunArgs) -> Result<()> {
@@ -278,8 +339,17 @@ async fn call_fusion_mlx(model: &str, prompt: &str, args: &InferenceArgs) -> Res
         messages,
         temperature: Some(args.temperature),
         max_tokens: Some(args.ctx),
-        stream: None,
+        stream: Some(args.stream),
     };
+
+    if args.stream {
+        match stream_chat(&request).await {
+            Ok(content) => return Ok(content),
+            Err(e) => {
+                info!(error = %e, "Stream failed, falling back to non-streaming");
+            }
+        }
+    }
 
     let response = mlx::chat_completion(&request).await?;
     Ok(response
