@@ -1,0 +1,64 @@
+use anyhow::Result;
+use serde::Deserialize;
+use std::time::Duration;
+use tracing::info;
+
+use super::{ServiceUrls, get_client};
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ModelEntry {
+    pub id: String,
+    pub name: String,
+    pub size: String,
+    pub quant: String,
+}
+
+fn base_url() -> String {
+    ServiceUrls::from_config()
+        .modelhub
+        .trim_end_matches('/')
+        .to_string()
+}
+
+#[allow(dead_code)]
+pub async fn list_models() -> Result<Vec<ModelEntry>> {
+    let client = get_client();
+    let url = format!("{}/v1/models", base_url());
+    info!(url = %url, "Listing ModelHub models");
+    let resp = client
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await?;
+    let data: Vec<ModelEntry> = resp.json().await?;
+    Ok(data)
+}
+
+#[allow(dead_code)]
+pub async fn search(name: &str) -> Result<Vec<ModelEntry>> {
+    let client = get_client();
+    let url = format!("{}/v1/models?q={}", base_url(), name);
+    info!(url = %url, "Searching ModelHub");
+    let resp = client
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await?;
+    let data: Vec<ModelEntry> = resp.json().await.unwrap_or_default();
+    Ok(data)
+}
+
+pub async fn health_check() -> Result<bool> {
+    let client = get_client();
+    let url = format!("{}/v1/models", base_url());
+    match client
+        .get(&url)
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+    {
+        Ok(resp) => Ok(resp.status().is_success()),
+        Err(_) => Ok(false),
+    }
+}

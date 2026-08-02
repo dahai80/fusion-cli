@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
-use tracing::{info, error};
+use tracing::{error, info};
+
+use crate::service::{ServiceUrls, get_client};
 
 #[derive(Subcommand)]
 pub enum ClusterCommands {
@@ -24,7 +26,7 @@ async fn cluster_status() -> Result<()> {
     let url = format!("{}/api/cluster/status", base_url);
     info!(url = %url, "Requesting cluster status");
 
-    let client = reqwest::Client::new();
+    let client = get_client();
     let resp = client
         .get(&url)
         .timeout(std::time::Duration::from_secs(10))
@@ -49,7 +51,11 @@ async fn cluster_status() -> Result<()> {
         }
         Err(e) => {
             error!(error = %e, "Cluster status request error");
-            println!("  {} Cannot reach cluster at {}", "❌".red(), base_url.cyan());
+            println!(
+                "  {} Cannot reach cluster at {}",
+                "❌".red(),
+                base_url.cyan()
+            );
             anyhow::bail!("Failed to connect to cluster: {}", e);
         }
     }
@@ -58,5 +64,8 @@ async fn cluster_status() -> Result<()> {
 }
 
 fn get_base_url() -> String {
-    std::env::var("FUSION_MLX_URL").unwrap_or_else(|_| "http://localhost:11434".to_string())
+    ServiceUrls::from_config()
+        .mlx
+        .trim_end_matches('/')
+        .to_string()
 }

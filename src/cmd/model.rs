@@ -2,24 +2,20 @@ use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
 use tabled::{Table, Tabled};
-use tracing::{info, error};
+use tracing::{error, info};
+
+use crate::service::{ServiceUrls, get_client};
 
 #[derive(Subcommand)]
 pub enum ModelCommands {
     /// 列出本地所有 MLX 模型
     List,
     /// 拉取官方/社区 MLX 模型
-    Pull {
-        name: String,
-    },
+    Pull { name: String },
     /// 查看模型详细信息
-    Info {
-        name: String,
-    },
+    Info { name: String },
     /// 删除本地模型
-    Delete {
-        name: String,
-    },
+    Delete { name: String },
     /// 清理冗余模型/缓存文件
     Clean,
     /// 第三方模型转换为 MLX 格式
@@ -63,7 +59,11 @@ async fn list_models() -> Result<()> {
 
     let models_dir = get_models_dir();
     if !models_dir.exists() {
-        println!("  {} No models directory found at {}", "ℹ️".blue(), models_dir.display().to_string().cyan());
+        println!(
+            "  {} No models directory found at {}",
+            "ℹ️".blue(),
+            models_dir.display().to_string().cyan()
+        );
         println!("  Use `fusion model pull <name>` to download models.");
         return Ok(());
     }
@@ -77,7 +77,11 @@ async fn list_models() -> Result<()> {
             let size = dir_size(&path);
             let config_path = path.join("config.json");
             let quant = if config_path.exists() {
-                if path.join("model.safetensors").exists() { "safetensors" } else { "mlx" }
+                if path.join("model.safetensors").exists() {
+                    "safetensors"
+                } else {
+                    "mlx"
+                }
             } else {
                 "unknown"
             };
@@ -98,7 +102,7 @@ async fn list_models() -> Result<()> {
     let mut table = Table::new(&entries);
     table.with(tabled::settings::Style::modern());
     table.with(tabled::settings::Width::increase(10));
-    println!("{}", table.to_string());
+    println!("{}", table);
     println!();
     println!("  Total: {} models", entries.len().to_string().cyan());
     Ok(())
@@ -106,7 +110,10 @@ async fn list_models() -> Result<()> {
 
 async fn pull_model(name: String) -> Result<()> {
     println!("{} Pulling model: {}", "📥".bold(), name.cyan());
-    println!("  {} This will download from Fusion-Model-Hub...", "⏳".blue());
+    println!(
+        "  {} This will download from Fusion-Model-Hub...",
+        "⏳".blue()
+    );
 
     let pb = indicatif::ProgressBar::new(100);
     pb.set_style(
@@ -123,8 +130,16 @@ async fn pull_model(name: String) -> Result<()> {
     }
     pb.finish_with_message(format!("✅ Downloaded: {}", name));
 
-    println!("  {} Model saved to: {}", "📂".cyan(), get_models_dir().join(&name).display());
-    println!("  {} Use `fusion chat --model={}` to start chatting.", "💡".yellow(), name.cyan());
+    println!(
+        "  {} Model saved to: {}",
+        "📂".cyan(),
+        get_models_dir().join(&name).display()
+    );
+    println!(
+        "  {} Use `fusion chat --model={}` to start chatting.",
+        "💡".yellow(),
+        name.cyan()
+    );
     Ok(())
 }
 
@@ -137,7 +152,12 @@ async fn model_info(name: String) -> Result<()> {
     println!();
     println!("{} Model: {}", "📄".bold(), name.cyan());
     println!("  Path:     {}", model_dir.display().to_string().cyan());
-    println!("  Size:     {}", indicatif::HumanBytes(dir_size(&model_dir)).to_string().cyan());
+    println!(
+        "  Size:     {}",
+        indicatif::HumanBytes(dir_size(&model_dir))
+            .to_string()
+            .cyan()
+    );
     println!("  Format:   MLX (native)");
 
     let config_path = model_dir.join("config.json");
@@ -148,9 +168,15 @@ async fn model_info(name: String) -> Result<()> {
                 println!("  Type:     {}", model_type.cyan());
             }
             if let Some(num_params) = config.get("num_parameters").and_then(|v| v.as_u64()) {
-                println!("  Params:   {}B", (num_params as f64 / 1_000_000_000.0).to_string().cyan());
+                println!(
+                    "  Params:   {}B",
+                    (num_params as f64 / 1_000_000_000.0).to_string().cyan()
+                );
             }
-            if let Some(ctx_len) = config.get("max_position_embeddings").and_then(|v| v.as_u64()) {
+            if let Some(ctx_len) = config
+                .get("max_position_embeddings")
+                .and_then(|v| v.as_u64())
+            {
                 println!("  Max Ctx:  {}", ctx_len.to_string().cyan());
             }
         }
@@ -168,7 +194,11 @@ async fn delete_model(name: String) -> Result<()> {
     }
 
     let confirm = dialoguer::Confirm::new()
-        .with_prompt(format!("Delete model '{}' ({}). This cannot be undone!", name.cyan(), indicatif::HumanBytes(dir_size(&model_dir))))
+        .with_prompt(format!(
+            "Delete model '{}' ({}). This cannot be undone!",
+            name.cyan(),
+            indicatif::HumanBytes(dir_size(&model_dir))
+        ))
         .default(false)
         .interact()?;
 
@@ -188,7 +218,11 @@ async fn clean_models() -> Result<()> {
     if cache_dir.exists() {
         let size = dir_size(&cache_dir);
         std::fs::remove_dir_all(&cache_dir)?;
-        println!("  {} Freed: {}", "✅".green(), indicatif::HumanBytes(size).to_string().cyan());
+        println!(
+            "  {} Freed: {}",
+            "✅".green(),
+            indicatif::HumanBytes(size).to_string().cyan()
+        );
     } else {
         println!("  {} No cache to clean.", "ℹ️".blue());
     }
@@ -198,7 +232,10 @@ async fn clean_models() -> Result<()> {
 async fn convert_model(source: String, quant: String) -> Result<()> {
     println!("{} Converting model: {}", "🔄".bold(), source.cyan());
     println!("  Target quantization: {}", quant.cyan());
-    println!("  {} This operation uses fusion-mlx for conversion.", "⏳".blue());
+    println!(
+        "  {} This operation uses fusion-mlx for conversion.",
+        "⏳".blue()
+    );
 
     let pb = indicatif::ProgressBar::new(100);
     pb.set_style(
@@ -219,8 +256,16 @@ async fn convert_model(source: String, quant: String) -> Result<()> {
 }
 
 async fn quantize_model(name: String, target: String) -> Result<()> {
-    println!("{} Quantizing model: {} → {}", "🔧".bold(), name.cyan(), target.cyan());
-    println!("  {} This operation uses fusion-mlx native quantization.", "⏳".blue());
+    println!(
+        "{} Quantizing model: {} → {}",
+        "🔧".bold(),
+        name.cyan(),
+        target.cyan()
+    );
+    println!(
+        "  {} This operation uses fusion-mlx native quantization.",
+        "⏳".blue()
+    );
 
     let pb = indicatif::ProgressBar::new(100);
     pb.set_style(
@@ -251,8 +296,11 @@ async fn submit_task(task: String, model_id: Option<String>) -> Result<()> {
     }
     println!();
 
-    let base_url = get_base_url();
-    let url = format!("{}/api/models/tasks/submit", base_url);
+    let urls = ServiceUrls::from_config();
+    let url = format!(
+        "{}/api/models/tasks/submit",
+        urls.modelhub.trim_end_matches('/')
+    );
     info!(url = %url, task = %task, model_id = ?model_id, "Submitting model task");
 
     let mut payload = serde_json::json!({
@@ -262,7 +310,7 @@ async fn submit_task(task: String, model_id: Option<String>) -> Result<()> {
         payload["model_id"] = serde_json::Value::String(mid.clone());
     }
 
-    let client = reqwest::Client::new();
+    let client = get_client();
     let resp = client
         .post(&url)
         .json(&payload)
@@ -292,10 +340,6 @@ async fn submit_task(task: String, model_id: Option<String>) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn get_base_url() -> String {
-    std::env::var("FUSION_MLX_URL").unwrap_or_else(|_| "http://localhost:11434".to_string())
 }
 
 fn get_models_dir() -> std::path::PathBuf {

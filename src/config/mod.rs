@@ -23,6 +23,9 @@ pub struct FusionConfig {
     pub model: ModelConfig,
     pub kb: KbConfig,
     pub mlx: MlxConfig,
+    pub modelhub: ModelhubConfig,
+    pub rag: RagConfig,
+    pub desk: DeskConfig,
     pub log: LogConfig,
 }
 
@@ -34,12 +37,31 @@ pub struct ModelConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct KbConfig {
     pub default_path: String,
+    pub base_url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MlxConfig {
     pub default_ctx: u32,
     pub enable_cache: bool,
+    pub base_url: String,
+    pub cache_size: String,
+    pub max_batch_size: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModelhubConfig {
+    pub base_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RagConfig {
+    pub base_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DeskConfig {
+    pub base_url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -63,10 +85,23 @@ impl Default for FusionConfig {
                     .join(".fusion/kb")
                     .to_string_lossy()
                     .to_string(),
+                base_url: "http://localhost:11434".to_string(),
             },
             mlx: MlxConfig {
                 default_ctx: 4096,
                 enable_cache: true,
+                base_url: "http://localhost:11434".to_string(),
+                cache_size: "4GB".to_string(),
+                max_batch_size: 8,
+            },
+            modelhub: ModelhubConfig {
+                base_url: "http://localhost:11444".to_string(),
+            },
+            rag: RagConfig {
+                base_url: "http://localhost:11436".to_string(),
+            },
+            desk: DeskConfig {
+                base_url: "http://localhost:9000".to_string(),
             },
             log: LogConfig {
                 level: "info".to_string(),
@@ -122,7 +157,11 @@ fn list_config() -> Result<()> {
     println!();
     println!("{}", config_str);
     println!("  Use `fusion config set <key> <value>` to modify.");
-    println!("  Built-in keys: model.default-path, kb.default-path, mlx.default-ctx, mlx.enable-cache, log.level");
+    println!("  Built-in keys: model.default-path, kb.default-path, kb.base-url,");
+    println!(
+        "    mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.cache-size, mlx.max-batch-size,"
+    );
+    println!("    modelhub.base-url, rag.base-url, desk.base-url, log.level");
     Ok(())
 }
 
@@ -131,12 +170,21 @@ fn get_config(key: String) -> Result<()> {
     let value = match key.as_str() {
         "model.default-path" => config.model.default_path.clone(),
         "kb.default-path" => config.kb.default_path.clone(),
+        "kb.base-url" => config.kb.base_url.clone(),
         "mlx.default-ctx" => config.mlx.default_ctx.to_string(),
         "mlx.enable-cache" => config.mlx.enable_cache.to_string(),
+        "mlx.base-url" => config.mlx.base_url.clone(),
+        "mlx.cache-size" => config.mlx.cache_size.clone(),
+        "mlx.max-batch-size" => config.mlx.max_batch_size.to_string(),
+        "modelhub.base-url" => config.modelhub.base_url.clone(),
+        "rag.base-url" => config.rag.base_url.clone(),
+        "desk.base-url" => config.desk.base_url.clone(),
         "log.level" => config.log.level.clone(),
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
-            println!("  Available keys: model.default-path, kb.default-path, mlx.default-ctx, mlx.enable-cache, log.level");
+            println!(
+                "  Available keys: model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, log.level"
+            );
             return Ok(());
         }
     };
@@ -149,12 +197,27 @@ async fn set_config(key: String, value: String) -> Result<()> {
     match key.as_str() {
         "model.default-path" => config.model.default_path = value.clone(),
         "kb.default-path" => config.kb.default_path = value.clone(),
+        "kb.base-url" => config.kb.base_url = value.clone(),
         "mlx.default-ctx" => {
-            config.mlx.default_ctx = value.parse().map_err(|_| anyhow::anyhow!("Invalid integer"))?
+            config.mlx.default_ctx = value
+                .parse()
+                .map_err(|_| anyhow::anyhow!("Invalid integer"))?
         }
         "mlx.enable-cache" => {
-            config.mlx.enable_cache = value.parse().map_err(|_| anyhow::anyhow!("Invalid boolean (true/false)"))?
+            config.mlx.enable_cache = value
+                .parse()
+                .map_err(|_| anyhow::anyhow!("Invalid boolean (true/false)"))?
         }
+        "mlx.base-url" => config.mlx.base_url = value.clone(),
+        "mlx.cache-size" => config.mlx.cache_size = value.clone(),
+        "mlx.max-batch-size" => {
+            config.mlx.max_batch_size = value
+                .parse()
+                .map_err(|_| anyhow::anyhow!("Invalid integer"))?
+        }
+        "modelhub.base-url" => config.modelhub.base_url = value.clone(),
+        "rag.base-url" => config.rag.base_url = value.clone(),
+        "desk.base-url" => config.desk.base_url = value.clone(),
         "log.level" => config.log.level = value.clone(),
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());

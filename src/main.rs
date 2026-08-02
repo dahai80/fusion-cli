@@ -3,9 +3,7 @@
 
 mod cmd;
 mod config;
-mod ecosystem;
-mod mlx_bind;
-mod system;
+mod service;
 mod utils;
 
 use clap::{CommandFactory, Parser, Subcommand};
