@@ -42,7 +42,7 @@ pub async fn run_init() -> Result<()> {
     let mlx_alive = crate::service::mlx::health_check().await.unwrap_or(false);
     if mlx_alive {
         println!(
-            "    {} fusion-mlx is running on localhost:11434",
+            "    {} fusion-mlx reachable via gateway localhost:11432",
             "✓".green()
         );
     } else {

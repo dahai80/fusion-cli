@@ -142,7 +142,7 @@ fn fallback_entries() -> Vec<ServiceEntry> {
             name: "mlx".into(),
             host: "localhost".into(),
             port: extract_port(&urls.mlx),
-            health_path: "/v1/models".into(),
+            health_path: "/health".into(),
             status: "unknown".into(),
         },
         ServiceEntry {

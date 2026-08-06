@@ -11,9 +11,9 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.80%2B-orange" alt="Rust">
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
-  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.4-blue" alt="Version">
 </p>
 
 ---
@@ -296,14 +296,16 @@ src/
 
 ### 服务 URL 配置
 
+所有服务 base_url 默认指向网关（`http://localhost:11432`），由网关转发到各后端服务。直连端口仅网关内部使用，CLI 通过网关访问。
+
 | 服务 | 默认 URL | 配置键 |
 |------|----------|--------|
-| fusion-mlx | `http://localhost:11434` | `mlx.base_url` |
-| Fusion-KB | `http://localhost:11434` | `kb.base_url` |
-| Model-Hub | `http://localhost:11444` | `modelhub.base_url` |
-| Fusion-RAG | `http://localhost:11436` | `rag.base_url` |
-| Fusion-Desk | `http://localhost:9000` | `desk.base_url` |
-| Fusion-Doc | `http://localhost:11449` | `doc.base_url` |
+| fusion-mlx | `http://localhost:11432` | `mlx.base_url` |
+| Fusion-KB | `http://localhost:11432` | `kb.base_url` |
+| Model-Hub | `http://localhost:11432` | `modelhub.base_url` |
+| Fusion-RAG | `http://localhost:11432` | `rag.base_url` |
+| Fusion-Desk | `http://localhost:11432` | `desk.base_url` |
+| Fusion-Doc | `http://localhost:11432` | `doc.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
 
 ---
@@ -358,7 +360,7 @@ src/
 
 ## 📄 许可证
 
-MIT 许可证。详见 [LICENSE](LICENSE)。
+Apache 2.0 许可证。详见 [LICENSE](LICENSE)。
 
 ---
 

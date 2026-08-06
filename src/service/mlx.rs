@@ -226,23 +226,17 @@ pub async fn generate_tokens(model: &str, max_tokens: u32) -> Result<BenchResult
     })
 }
 
-#[allow(dead_code)]
-pub fn assert_fusion_mlx_only() -> Result<()> {
-    let urls = ServiceUrls::from_config();
-    let base = urls.mlx;
-    assert!(
-        base.contains("localhost:11434") || base.contains("127.0.0.1:11434"),
-        "Fusion-CLI only supports fusion-mlx (localhost:11434)"
-    );
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_assert_fusion_mlx_only() {
-        assert!(assert_fusion_mlx_only().is_ok());
+    fn test_base_url_uses_gateway_port() {
+        let urls = ServiceUrls::from_config();
+        assert!(
+            urls.mlx.contains("localhost:11432") || urls.mlx.contains("127.0.0.1:11432"),
+            "base_url should route through gateway (localhost:11432), got: {}",
+            urls.mlx
+        );
     }
 }

@@ -104,26 +104,26 @@ impl Default for FusionConfig {
                     .join(".fusion/kb")
                     .to_string_lossy()
                     .to_string(),
-                base_url: "http://localhost:11434".to_string(),
+                base_url: "http://localhost:11432".to_string(),
             },
             mlx: MlxConfig {
                 default_ctx: 4096,
                 enable_cache: true,
-                base_url: "http://localhost:11434".to_string(),
+                base_url: "http://localhost:11432".to_string(),
                 cache_size: "4GB".to_string(),
                 max_batch_size: 8,
             },
             modelhub: ModelhubConfig {
-                base_url: "http://localhost:11444".to_string(),
+                base_url: "http://localhost:11432".to_string(),
             },
             rag: RagConfig {
-                base_url: "http://localhost:11436".to_string(),
+                base_url: "http://localhost:11432".to_string(),
             },
             desk: DeskConfig {
-                base_url: "http://localhost:9000".to_string(),
+                base_url: "http://localhost:11432".to_string(),
             },
             doc: DocConfig {
-                base_url: "http://localhost:11449".to_string(),
+                base_url: "http://localhost:11432".to_string(),
             },
             log: LogConfig {
                 level: "info".to_string(),
