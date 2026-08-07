@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MLX health check path corrected to `/health` (not `/v1/models`).
 
 ### Added
-- Gateway `/stats` reverse-proxy support (upstream PR #35, closes issue #34):
+- Gateway `/stats` reverse-proxy support (upstream PR #35 merged, closes issue #34):
   `fusion bench mem` now reports full server memory stats through the gateway.
 
 ## [0.2.4] - 2026-08-06
