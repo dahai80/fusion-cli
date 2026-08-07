@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.4-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.5-blue" alt="Version">
 </p>
 
 ---
@@ -296,16 +296,17 @@ src/
 
 ### 服务 URL 配置
 
-所有服务 base_url 默认指向网关（`http://localhost:11432`），由网关转发到各后端服务。直连端口仅网关内部使用，CLI 通过网关访问。
+fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*` 端点，需 `mlx.api_key`）。其他生态服务默认连接各自直连本地端口；网关当前仅代理 mlx 推理 API。
 
 | 服务 | 默认 URL | 配置键 |
 |------|----------|--------|
 | fusion-mlx | `http://localhost:11432` | `mlx.base_url` |
-| Fusion-KB | `http://localhost:11432` | `kb.base_url` |
-| Model-Hub | `http://localhost:11432` | `modelhub.base_url` |
-| Fusion-RAG | `http://localhost:11432` | `rag.base_url` |
-| Fusion-Desk | `http://localhost:11432` | `desk.base_url` |
-| Fusion-Doc | `http://localhost:11432` | `doc.base_url` |
+| fusion-mlx API key | `fg-admin-key` | `mlx.api_key` |
+| Fusion-KB | `http://localhost:11434` | `kb.base_url` |
+| Model-Hub | `http://localhost:11444` | `modelhub.base_url` |
+| Fusion-RAG | `http://localhost:11436` | `rag.base_url` |
+| Fusion-Desk | `http://localhost:9000` | `desk.base_url` |
+| Fusion-Doc | `http://localhost:11449` | `doc.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
 
 ---

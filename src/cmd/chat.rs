@@ -35,6 +35,9 @@ pub struct InferenceArgs {
 
     #[arg(long, default_value_t = true)]
     pub stream: bool,
+
+    #[arg(long, default_value_t = false)]
+    pub no_stream: bool,
 }
 
 #[derive(Args, Clone)]
@@ -138,7 +141,8 @@ pub async fn handle_chat(args: ChatArgs) -> Result<()> {
             stream: Some(args.inference.stream),
         };
 
-        if args.inference.stream {
+        let want_stream = args.inference.stream && !args.inference.no_stream;
+        if want_stream {
             match stream_chat(&request).await {
                 Ok(content) => {
                     conversation.push(mlx::Message {
@@ -342,7 +346,7 @@ async fn call_fusion_mlx(model: &str, prompt: &str, args: &InferenceArgs) -> Res
         stream: Some(args.stream),
     };
 
-    if args.stream {
+    if args.stream && !args.no_stream {
         match stream_chat(&request).await {
             Ok(content) => return Ok(content),
             Err(e) => {

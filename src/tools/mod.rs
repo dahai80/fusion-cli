@@ -32,6 +32,10 @@ impl ToolExecutor {
         names.sort();
         names
     }
+
+    pub fn is_known(&self, name: &str) -> bool {
+        self.tools.contains_key(name)
+    }
 }
 
 #[async_trait::async_trait]

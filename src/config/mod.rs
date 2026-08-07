@@ -59,8 +59,14 @@ pub struct MlxConfig {
     pub default_ctx: u32,
     pub enable_cache: bool,
     pub base_url: String,
+    #[serde(default = "default_mlx_api_key")]
+    pub api_key: String,
     pub cache_size: String,
     pub max_batch_size: u32,
+}
+
+fn default_mlx_api_key() -> String {
+    "fg-admin-key".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -104,26 +110,27 @@ impl Default for FusionConfig {
                     .join(".fusion/kb")
                     .to_string_lossy()
                     .to_string(),
-                base_url: "http://localhost:11432".to_string(),
+                base_url: "http://localhost:11434".to_string(),
             },
             mlx: MlxConfig {
                 default_ctx: 4096,
                 enable_cache: true,
                 base_url: "http://localhost:11432".to_string(),
+                api_key: default_mlx_api_key(),
                 cache_size: "4GB".to_string(),
                 max_batch_size: 8,
             },
             modelhub: ModelhubConfig {
-                base_url: "http://localhost:11432".to_string(),
+                base_url: "http://localhost:11444".to_string(),
             },
             rag: RagConfig {
-                base_url: "http://localhost:11432".to_string(),
+                base_url: "http://localhost:11436".to_string(),
             },
             desk: DeskConfig {
-                base_url: "http://localhost:11432".to_string(),
+                base_url: "http://localhost:9000".to_string(),
             },
             doc: DocConfig {
-                base_url: "http://localhost:11432".to_string(),
+                base_url: "http://localhost:11449".to_string(),
             },
             log: LogConfig {
                 level: "info".to_string(),
@@ -182,9 +189,9 @@ fn list_config() -> Result<()> {
     println!("  Use `fusion config set <key> <value>` to modify.");
     println!("  Built-in keys: model.default-path, kb.default-path, kb.base-url,");
     println!(
-        "    mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.cache-size, mlx.max-batch-size,"
+        "    mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size,"
     );
-    println!("    modelhub.base-url, rag.base-url, desk.base-url, log.level");
+    println!("    modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, log.level");
     Ok(())
 }
 
@@ -197,6 +204,7 @@ fn get_config(key: String) -> Result<()> {
         "mlx.default-ctx" => config.mlx.default_ctx.to_string(),
         "mlx.enable-cache" => config.mlx.enable_cache.to_string(),
         "mlx.base-url" => config.mlx.base_url.clone(),
+        "mlx.api-key" => config.mlx.api_key.clone(),
         "mlx.cache-size" => config.mlx.cache_size.clone(),
         "mlx.max-batch-size" => config.mlx.max_batch_size.to_string(),
         "modelhub.base-url" => config.modelhub.base_url.clone(),
@@ -207,7 +215,7 @@ fn get_config(key: String) -> Result<()> {
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
             println!(
-                "  Available keys: model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, log.level"
+                "  Available keys: model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, log.level"
             );
             return Ok(());
         }
@@ -233,6 +241,7 @@ async fn set_config(key: String, value: String) -> Result<()> {
                 .map_err(|_| anyhow::anyhow!("Invalid boolean (true/false)"))?
         }
         "mlx.base-url" => config.mlx.base_url = value.clone(),
+        "mlx.api-key" => config.mlx.api_key = value.clone(),
         "mlx.cache-size" => config.mlx.cache_size = value.clone(),
         "mlx.max-batch-size" => {
             config.mlx.max_batch_size = value

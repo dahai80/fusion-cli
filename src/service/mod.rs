@@ -30,6 +30,7 @@ pub fn get_client() -> Arc<Client> {
 
 pub struct ServiceUrls {
     pub mlx: String,
+    pub mlx_api_key: String,
     pub kb: String,
     pub modelhub: String,
     pub rag: String,
@@ -42,6 +43,7 @@ impl ServiceUrls {
         let config = crate::config::load_config();
         Self {
             mlx: config.mlx.base_url.clone(),
+            mlx_api_key: config.mlx.api_key.clone(),
             kb: config.kb.base_url.clone(),
             modelhub: config.modelhub.base_url.clone(),
             rag: config.rag.base_url.clone(),
@@ -53,6 +55,14 @@ impl ServiceUrls {
     pub fn mlx_api(&self) -> String {
         let base = self.mlx.trim_end_matches("/v1").trim_end_matches('/');
         format!("{}/v1", base)
+    }
+
+    pub fn mlx_auth_header(&self) -> Option<(&'static str, String)> {
+        if self.mlx_api_key.is_empty() {
+            None
+        } else {
+            Some(("Authorization", format!("Bearer {}", self.mlx_api_key)))
+        }
     }
 }
 

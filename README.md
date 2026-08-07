@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.4-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.5-blue" alt="Version">
 </p>
 
 ---
@@ -296,16 +296,17 @@ src/
 
 ### Service URL Configuration
 
-All service base URLs default to the gateway (`http://localhost:11432`), which routes to each backing service. Direct service ports are used only by the gateway internally; the CLI connects through it.
+fusion-mlx inference routes through the gateway (`http://localhost:11432`, OpenAI-compatible `/v1/*` endpoints, requires `mlx.api_key`). All other ecosystem services connect to their direct local ports by default; the gateway currently proxies only the mlx inference API.
 
 | Service | Default URL | Config Key |
 |---------|-------------|------------|
 | fusion-mlx | `http://localhost:11432` | `mlx.base_url` |
-| Fusion-KB | `http://localhost:11432` | `kb.base_url` |
-| Model-Hub | `http://localhost:11432` | `modelhub.base_url` |
-| Fusion-RAG | `http://localhost:11432` | `rag.base_url` |
-| Fusion-Desk | `http://localhost:11432` | `desk.base_url` |
-| Fusion-Doc | `http://localhost:11432` | `doc.base_url` |
+| fusion-mlx API key | `fg-admin-key` | `mlx.api_key` |
+| Fusion-KB | `http://localhost:11434` | `kb.base_url` |
+| Model-Hub | `http://localhost:11444` | `modelhub.base_url` |
+| Fusion-RAG | `http://localhost:11436` | `rag.base_url` |
+| Fusion-Desk | `http://localhost:9000` | `desk.base_url` |
+| Fusion-Doc | `http://localhost:11449` | `doc.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
 
 ---

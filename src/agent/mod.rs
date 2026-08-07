@@ -86,8 +86,19 @@ impl Agent {
                 .unwrap_or_default();
 
             let tool_calls = extract_tool_calls(&content);
+            let valid_calls: Vec<ToolCall> = tool_calls
+                .into_iter()
+                .filter(|tc| {
+                    if !self.tools.is_known(&tc.tool_name) {
+                        info!(tool = %tc.tool_name, "Ignoring unknown tool name in model output");
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .collect();
 
-            if tool_calls.is_empty() {
+            if valid_calls.is_empty() {
                 self.context.add_assistant_message(&content);
                 final_response = content;
                 break;
@@ -95,7 +106,7 @@ impl Agent {
 
             self.context.add_assistant_message(&content);
 
-            for tc in &tool_calls {
+            for tc in &valid_calls {
                 if !self.config.permission_tier.allow_tool(&tc.tool_name) {
                     let msg = format!("[Permission denied for tool: {}]", tc.tool_name);
                     info!(tool = %tc.tool_name, "Tool call denied by permission tier");
