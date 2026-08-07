@@ -3,7 +3,7 @@ use tracing::info;
 
 use super::ServiceUrls;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ServiceStatus {
     pub name: String,
     pub url: String,
@@ -79,7 +79,6 @@ pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
     Ok(results)
 }
 
-#[allow(dead_code)]
 pub async fn check_named(name: &str) -> Result<ServiceStatus> {
     let urls = ServiceUrls::from_config();
     let (svc_name, svc_url) = match name.to_lowercase().as_str() {

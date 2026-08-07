@@ -56,20 +56,49 @@ pub async fn handle_model(action: ModelCommands) -> Result<()> {
 }
 
 async fn list_models() -> Result<()> {
+    let entries = collect_local_models()?;
+
+    if crate::utils::output::is_json_mode() {
+        let payload = serde_json::json!({
+            "models": entries,
+            "total": entries.len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
     println!();
     println!("{}", "📦 Local MLX Models".bold());
 
-    let models_dir = get_models_dir();
-    if !models_dir.exists() {
-        println!(
-            "  {} No models directory found at {}",
-            "ℹ️".blue(),
-            models_dir.display().to_string().cyan()
-        );
+    if entries.is_empty() {
+        let models_dir = get_models_dir();
+        if !models_dir.exists() {
+            println!(
+                "  {} No models directory found at {}",
+                "ℹ️".blue(),
+                models_dir.display().to_string().cyan()
+            );
+        } else {
+            println!("  {} No models found.", "ℹ️".blue());
+        }
         println!("  Use `fusion model pull <name>` to download models.");
         return Ok(());
     }
 
+    let mut table = Table::new(&entries);
+    table.with(tabled::settings::Style::modern());
+    table.with(tabled::settings::Width::increase(10));
+    println!("{}", table);
+    println!();
+    println!("  Total: {} models", entries.len().to_string().cyan());
+    Ok(())
+}
+
+fn collect_local_models() -> Result<Vec<ModelEntry>> {
+    let models_dir = get_models_dir();
+    if !models_dir.exists() {
+        return Ok(Vec::new());
+    }
     let mut entries = Vec::new();
     for entry in std::fs::read_dir(&models_dir)? {
         let entry = entry?;
@@ -94,20 +123,7 @@ async fn list_models() -> Result<()> {
             });
         }
     }
-
-    if entries.is_empty() {
-        println!("  {} No models found.", "ℹ️".blue());
-        println!("  Use `fusion model pull <name>` to download models.");
-        return Ok(());
-    }
-
-    let mut table = Table::new(&entries);
-    table.with(tabled::settings::Style::modern());
-    table.with(tabled::settings::Width::increase(10));
-    println!("{}", table);
-    println!();
-    println!("  Total: {} models", entries.len().to_string().cyan());
-    Ok(())
+    Ok(entries)
 }
 
 async fn pull_model(name: &str, mirror: &str) -> Result<()> {
@@ -539,7 +555,7 @@ fn dir_size(path: &std::path::Path) -> u64 {
     walk(path)
 }
 
-#[derive(Tabled)]
+#[derive(Tabled, serde::Serialize)]
 struct ModelEntry {
     #[tabled(rename = "Name")]
     name: String,

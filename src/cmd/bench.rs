@@ -52,13 +52,6 @@ pub async fn handle_bench(action: BenchCommands) -> Result<()> {
 }
 
 async fn bench_speed(model: &str, tokens: u32, runs: u32) -> Result<()> {
-    println!();
-    println!("{}", "⚡ Speed Benchmark".bold());
-    println!("  Model: {}", model.cyan());
-    println!("  Target: {} tokens", tokens.to_string().cyan());
-    println!("  Runs: {}", runs.to_string().cyan());
-    println!();
-
     let alive = crate::service::mlx::health_check().await?;
     if !alive {
         anyhow::bail!("fusion-mlx is not running — start it with: fusion service start mlx");
@@ -71,26 +64,43 @@ async fn bench_speed(model: &str, tokens: u32, runs: u32) -> Result<()> {
     );
 
     let mut results = Vec::new();
+    let json_mode = crate::utils::output::is_json_mode();
+
+    if !json_mode {
+        println!();
+        println!("{}", "⚡ Speed Benchmark".bold());
+        println!("  Model: {}", model.cyan());
+        println!("  Target: {} tokens", tokens.to_string().cyan());
+        println!("  Runs: {}", runs.to_string().cyan());
+        println!();
+    }
+
     for run in 1..=runs {
-        println!(
-            "  {} Run {}/{}...",
-            "▶".blue(),
-            run.to_string().cyan(),
-            runs.to_string().cyan()
-        );
+        if !json_mode {
+            println!(
+                "  {} Run {}/{}...",
+                "▶".blue(),
+                run.to_string().cyan(),
+                runs.to_string().cyan()
+            );
+        }
         match crate::service::mlx::generate_tokens(model, tokens).await {
             Ok(result) => {
-                println!(
-                    "    {} {:.1} tok/s | {} tokens in {:.2}s",
-                    "✓".green(),
-                    result.tokens_per_sec,
-                    result.completion_tokens.to_string().cyan(),
-                    result.elapsed_secs,
-                );
+                if !json_mode {
+                    println!(
+                        "    {} {:.1} tok/s | {} tokens in {:.2}s",
+                        "✓".green(),
+                        result.tokens_per_sec,
+                        result.completion_tokens.to_string().cyan(),
+                        result.elapsed_secs,
+                    );
+                }
                 results.push(result);
             }
             Err(e) => {
-                println!("    {} Run failed: {}", "✗".red(), e);
+                if !json_mode {
+                    println!("    {} Run failed: {}", "✗".red(), e);
+                }
                 info!(error = %e, run = run, "Speed benchmark run failed");
             }
         }
@@ -104,14 +114,30 @@ async fn bench_speed(model: &str, tokens: u32, runs: u32) -> Result<()> {
     let avg_elapsed = results.iter().map(|r| r.elapsed_secs).sum::<f64>() / results.len() as f64;
     let total_tokens: u32 = results.iter().map(|r| r.completion_tokens).sum();
 
+    if json_mode {
+        let payload = serde_json::json!({
+            "model": model,
+            "avg_speed_tokens_per_sec": (avg_speed * 10.0).round() / 10.0,
+            "avg_time_secs": (avg_elapsed * 100.0).round() / 100.0,
+            "total_tokens": total_tokens,
+            "successful_runs": results.len(),
+            "total_runs": runs,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
     println!();
     println!("{}", "📊 Results".bold());
     println!("  Model:            {}", model.cyan());
     println!(
-        "  Avg speed:        {:.1} tokens/s",
-        avg_speed.to_string().cyan().bold()
+        "  Avg speed:        {} tokens/s",
+        format!("{:.1}", avg_speed).cyan().bold()
     );
-    println!("  Avg time:         {:.2}s", avg_elapsed.to_string().cyan());
+    println!(
+        "  Avg time:         {}",
+        format!("{:.2}s", avg_elapsed).cyan()
+    );
     println!("  Total tokens:     {}", total_tokens.to_string().cyan());
     println!(
         "  Successful runs:  {}/{}",

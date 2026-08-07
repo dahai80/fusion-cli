@@ -220,8 +220,19 @@ async fn stream_chat(request: &mlx::InferenceRequest) -> Result<String> {
 }
 
 pub async fn handle_run(args: RunArgs) -> Result<()> {
+    let result = call_fusion_mlx(&args.inference.model, &args.prompt, &args.inference).await?;
+
+    if crate::utils::output::is_json_mode() {
+        let payload = serde_json::json!({
+            "model": args.inference.model,
+            "prompt": args.prompt,
+            "response": result,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
     if args.inference.quiet {
-        let result = call_fusion_mlx(&args.inference.model, &args.prompt, &args.inference).await?;
         println!("{}", result);
     } else {
         println!(
@@ -230,7 +241,6 @@ pub async fn handle_run(args: RunArgs) -> Result<()> {
             args.inference.model.cyan()
         );
         println!("  Prompt: {}", args.prompt.dimmed());
-        let result = call_fusion_mlx(&args.inference.model, &args.prompt, &args.inference).await?;
         println!();
         println!("{}", result);
     }
@@ -267,11 +277,15 @@ pub async fn handle_code(args: CodeArgs) -> Result<()> {
 }
 
 pub async fn handle_embed(args: EmbedArgs) -> Result<()> {
-    println!(
-        "{} Generating embeddings with {}...",
-        "📐".bold(),
-        args.model.cyan()
-    );
+    let json_mode = crate::utils::output::is_json_mode();
+
+    if !json_mode {
+        println!(
+            "{} Generating embeddings with {}...",
+            "📐".bold(),
+            args.model.cyan()
+        );
+    }
 
     let text = if let Some(t) = &args.text {
         t.clone()
@@ -294,14 +308,27 @@ pub async fn handle_embed(args: EmbedArgs) -> Result<()> {
         anyhow::bail!("Either --text or --dir is required");
     };
 
-    println!(
-        "  Input length: {} characters",
-        text.len().to_string().cyan()
-    );
+    if !json_mode {
+        println!(
+            "  Input length: {} characters",
+            text.len().to_string().cyan()
+        );
+    }
 
     match mlx::create_embedding(&args.model, &text).await {
         Ok(embedding) => {
             let dims = embedding.len();
+
+            if json_mode {
+                let payload = serde_json::json!({
+                    "model": args.model,
+                    "dimensions": dims,
+                    "vector": embedding,
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
+
             println!(
                 "  ✅ Embedding generated: {} dimensions",
                 dims.to_string().cyan()
@@ -318,6 +345,14 @@ pub async fn handle_embed(args: EmbedArgs) -> Result<()> {
             }
         }
         Err(e) => {
+            if json_mode {
+                let payload = serde_json::json!({
+                    "error": e.to_string(),
+                    "model": args.model,
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             println!("  {} Error: {}", "❌".red(), e);
         }
     }

@@ -46,6 +46,19 @@ pub async fn handle_service(action: ServiceCommands) -> Result<()> {
 async fn service_status(watch_interval: Option<u64>) -> Result<()> {
     let interval = watch_interval.unwrap_or(0);
     loop {
+        let statuses = health::check_all_with_latency().await?;
+
+        if crate::utils::output::is_json_mode() {
+            let up_count = statuses.iter().filter(|s| s.alive).count();
+            let payload = serde_json::json!({
+                "services": statuses,
+                "running": up_count,
+                "total": statuses.len(),
+            });
+            println!("{}", serde_json::to_string_pretty(&payload)?);
+            return Ok(());
+        }
+
         if interval > 0 {
             print!("\x1B[2J\x1B[H");
         }
@@ -53,7 +66,6 @@ async fn service_status(watch_interval: Option<u64>) -> Result<()> {
         println!("{}", "🔌 Fusion Ecosystem Services".bold());
         println!();
 
-        let statuses = health::check_all_with_latency().await?;
         let mut entries = Vec::new();
         for s in &statuses {
             let (status, pid) = if s.alive {

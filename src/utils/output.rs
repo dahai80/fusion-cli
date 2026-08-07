@@ -17,14 +17,12 @@ impl OutputFormat {
     }
 }
 
-#[allow(dead_code)]
 pub fn print_json<T: Serialize>(data: &T) -> anyhow::Result<()> {
     let json = serde_json::to_string_pretty(data)?;
     println!("{}", json);
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn is_json_mode() -> bool {
     std::env::var("FUSION_OUTPUT_FORMAT")
         .map(|v| v.to_lowercase() == "json")
