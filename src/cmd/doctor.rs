@@ -115,7 +115,30 @@ pub async fn run() -> Result<()> {
 
     // 5. fusion-mlx 检测
     println!("{}", "🎯 fusion-mlx Check".bold());
-    check_service("fusion-mlx", mlx::health_check().await.unwrap_or(false)).await;
+    let mlx_alive = mlx::health_check().await.unwrap_or(false);
+    check_service("fusion-mlx", mlx_alive).await;
+
+    // 5b. 网关配置一致性检测 — 默认 mlx.base_url 指向 gateway :11432，
+    // 若网关未启动则所有 MLX 调用不可达，需提示用户切回直连端口或启动网关。
+    let config = crate::config::load_config();
+    let mlx_via_gateway = config.mlx.base_url.contains("11432");
+    if mlx_via_gateway && !mlx_alive {
+        println!(
+            "  {} mlx.base_url points at the gateway ({}) but fusion-mlx is unreachable.",
+            "⚠️".yellow(),
+            config.mlx.base_url.cyan()
+        );
+        println!(
+            "     Start the gateway, or switch to the direct MLX port with: {}",
+            "fusion config set mlx.base-url http://localhost:11434/v1".cyan()
+        );
+    } else if mlx_via_gateway {
+        println!(
+            "  {} mlx.base_url routed via gateway ({})",
+            "ℹ️".blue(),
+            config.mlx.base_url.cyan()
+        );
+    }
     println!();
 
     // 6. Fusion-KB 检测

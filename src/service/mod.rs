@@ -53,7 +53,11 @@ impl ServiceUrls {
     }
 
     pub fn mlx_api(&self) -> String {
-        let base = self.mlx.trim_end_matches("/v1").trim_end_matches('/');
+        let base = self
+            .mlx
+            .trim_end_matches('/')
+            .trim_end_matches("/v1")
+            .trim_end_matches('/');
         format!("{}/v1", base)
     }
 
@@ -76,5 +80,47 @@ pub async fn check_url(url: &str, timeout_secs: u64) -> bool {
     {
         Ok(resp) => resp.status().is_success(),
         Err(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mlx_api_appends_v1_when_missing() {
+        let mut urls = ServiceUrls::from_config();
+        urls.mlx = "http://localhost:11432".to_string();
+        assert_eq!(urls.mlx_api(), "http://localhost:11432/v1");
+    }
+
+    #[test]
+    fn test_mlx_api_idempotent_when_v1_present() {
+        let mut urls = ServiceUrls::from_config();
+        urls.mlx = "http://localhost:11432/v1".to_string();
+        assert_eq!(urls.mlx_api(), "http://localhost:11432/v1");
+    }
+
+    #[test]
+    fn test_mlx_api_strips_trailing_slash() {
+        let mut urls = ServiceUrls::from_config();
+        urls.mlx = "http://localhost:11432/v1/".to_string();
+        assert_eq!(urls.mlx_api(), "http://localhost:11432/v1");
+    }
+
+    #[test]
+    fn test_mlx_api_strips_trailing_slash_without_v1() {
+        let mut urls = ServiceUrls::from_config();
+        urls.mlx = "http://localhost:11432/".to_string();
+        assert_eq!(urls.mlx_api(), "http://localhost:11432/v1");
+    }
+
+    #[test]
+    fn test_mlx_auth_header_returns_bearer_when_key_present() {
+        let mut urls = ServiceUrls::from_config();
+        urls.mlx_api_key = "secret-key".to_string();
+        let (name, value) = urls.mlx_auth_header().expect("header must be present");
+        assert_eq!(name, "Authorization");
+        assert_eq!(value, "Bearer secret-key");
     }
 }

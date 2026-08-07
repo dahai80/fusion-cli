@@ -195,3 +195,61 @@ pub async fn run_agent(model: &str, prompt: &str, permission: &str) -> Result<()
     println!("{} {}", "Assistant:".green().bold(), response);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_single_tool_call_with_args() {
+        let content = "I will check the models.\n```tool\nlist_models\n```\nDone.";
+        let calls = extract_tool_calls(content);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool_name, "list_models");
+        assert!(calls[0].args.is_empty());
+    }
+
+    #[test]
+    fn test_extract_tool_call_with_key_value_args() {
+        let content = "```tool\nmodel_info\nmodel=qwen\n```\n";
+        let calls = extract_tool_calls(content);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool_name, "model_info");
+        assert_eq!(calls[0].args.get("model"), Some(&"qwen".to_string()));
+    }
+
+    #[test]
+    fn test_extract_multiple_tool_calls() {
+        let content =
+            "```tool\nhealth\n```\nsome text\n```tool\nbench_speed\nmodel=qwen\ntokens=128\n```";
+        let calls = extract_tool_calls(content);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].tool_name, "health");
+        assert_eq!(calls[1].tool_name, "bench_speed");
+        assert_eq!(calls[1].args.get("tokens"), Some(&"128".to_string()));
+    }
+
+    #[test]
+    fn test_extract_tool_calls_empty_when_no_block() {
+        let calls = extract_tool_calls("just plain text, no tool blocks here");
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn test_extract_tool_call_unclosed_block_takes_rest() {
+        let content = "```tool\nhealth\n";
+        let calls = extract_tool_calls(content);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool_name, "health");
+    }
+
+    #[test]
+    fn test_extract_tool_call_ignores_non_kv_lines() {
+        let content = "```tool\nbench_speed\nmodel=qwen\nnot an assignment line\ntokens=64\n```";
+        let calls = extract_tool_calls(content);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].args.len(), 2);
+        assert_eq!(calls[0].args.get("model"), Some(&"qwen".to_string()));
+        assert_eq!(calls[0].args.get("tokens"), Some(&"64".to_string()));
+    }
+}

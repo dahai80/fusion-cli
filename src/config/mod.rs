@@ -278,3 +278,51 @@ async fn reset_config() -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_mlx_uses_gateway_port() {
+        let config = FusionConfig::default();
+        assert_eq!(config.mlx.base_url, "http://localhost:11432");
+    }
+
+    #[test]
+    fn test_default_mlx_api_key_is_admin_key() {
+        let config = FusionConfig::default();
+        assert_eq!(config.mlx.api_key, "fg-admin-key");
+    }
+
+    #[test]
+    fn test_default_mlx_ctx_and_cache() {
+        let config = FusionConfig::default();
+        assert_eq!(config.mlx.default_ctx, 4096);
+        assert!(config.mlx.enable_cache);
+        assert_eq!(config.mlx.cache_size, "4GB");
+        assert_eq!(config.mlx.max_batch_size, 8);
+    }
+
+    #[test]
+    fn test_default_direct_service_ports_not_gateway() {
+        let config = FusionConfig::default();
+        assert_eq!(config.kb.base_url, "http://localhost:11434");
+        assert_eq!(config.modelhub.base_url, "http://localhost:11444");
+        assert_eq!(config.rag.base_url, "http://localhost:11436");
+        assert_eq!(config.desk.base_url, "http://localhost:9000");
+        assert_eq!(config.doc.base_url, "http://localhost:11449");
+    }
+
+    #[test]
+    fn test_default_gateway_is_none() {
+        let config = FusionConfig::default();
+        assert!(config.gateway.is_none());
+    }
+
+    #[test]
+    fn test_default_log_level_info() {
+        let config = FusionConfig::default();
+        assert_eq!(config.log.level, "info");
+    }
+}

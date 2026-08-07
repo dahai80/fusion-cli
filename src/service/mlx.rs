@@ -83,6 +83,7 @@ fn base_url() -> String {
 fn stats_url() -> String {
     ServiceUrls::from_config()
         .mlx
+        .trim_end_matches('/')
         .trim_end_matches("/v1")
         .trim_end_matches('/')
         .to_string()
@@ -104,7 +105,10 @@ pub async fn health_check() -> Result<bool> {
     let client = get_client();
     let urls = service_urls();
     let base: &str = &base_url();
-    let base = base.trim_end_matches("/v1").trim_end_matches('/');
+    let base = base
+        .trim_end_matches('/')
+        .trim_end_matches("/v1")
+        .trim_end_matches('/');
     let url = format!("{}/health", base);
     let req = apply_auth(client.get(&url), &urls);
     match req.timeout(Duration::from_secs(2)).send().await {
@@ -377,5 +381,48 @@ mod tests {
                 && !urls.doc.contains("11432"),
             "kb/modelhub/rag/desk/doc must use direct service ports, not gateway 11432"
         );
+    }
+
+    #[test]
+    fn test_aggregate_sse_concats_delta_content() {
+        let chunk1 = r#"{"model":"qwen","choices":[{"delta":{"content":"Hello"}}]}"#;
+        let chunk2 = r#"{"model":"qwen","choices":[{"delta":{"content":" world"}}]}"#;
+        let raw = format!("data: {}\n\ndata: {}\n\ndata: [DONE]\n", chunk1, chunk2);
+        let resp = aggregate_sse_to_response(&raw).unwrap();
+        assert_eq!(resp.choices.len(), 1);
+        assert_eq!(
+            resp.choices[0].message.content.as_deref(),
+            Some("Hello world")
+        );
+    }
+
+    #[test]
+    fn test_aggregate_sse_captures_usage() {
+        let payload = r#"{"model":"qwen","choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}"#;
+        let raw = format!("data: {}\n\ndata: [DONE]\n", payload);
+        let resp = aggregate_sse_to_response(&raw).unwrap();
+        assert!(resp.usage.is_some());
+        let u = resp.usage.unwrap();
+        assert_eq!(u.prompt_tokens, 5);
+        assert_eq!(u.completion_tokens, 2);
+    }
+
+    #[test]
+    fn test_aggregate_sse_empty_returns_none_content() {
+        let resp = aggregate_sse_to_response("data: [DONE]\n").unwrap();
+        assert_eq!(resp.choices[0].message.content, None);
+        assert!(resp.usage.is_none());
+    }
+
+    #[test]
+    fn test_stats_url_strips_v1_suffix() {
+        let mut urls = ServiceUrls::from_config();
+        urls.mlx = "http://localhost:11432/v1".to_string();
+        let s = urls
+            .mlx
+            .trim_end_matches("/v1")
+            .trim_end_matches('/')
+            .to_string();
+        assert_eq!(s, "http://localhost:11432");
     }
 }

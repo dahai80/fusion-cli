@@ -106,3 +106,36 @@ impl Tool for BenchSpeedTool {
         }))?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_known_recognizes_registered_tools() {
+        let exec = ToolExecutor::new();
+        assert!(exec.is_known("list_models"));
+        assert!(exec.is_known("model_info"));
+        assert!(exec.is_known("health"));
+        assert!(exec.is_known("bench_speed"));
+    }
+
+    #[test]
+    fn test_is_known_rejects_unknown_tool() {
+        let exec = ToolExecutor::new();
+        assert!(!exec.is_known("nonexistent_tool"));
+        assert!(!exec.is_known(""));
+    }
+
+    #[test]
+    fn test_list_tools_is_sorted_and_complete() {
+        let exec = ToolExecutor::new();
+        let names = exec.list_tools();
+        assert_eq!(names.len(), 4);
+        assert_eq!(names, {
+            let mut v = names.to_vec();
+            v.sort();
+            v
+        });
+    }
+}
