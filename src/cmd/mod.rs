@@ -6,6 +6,7 @@ pub mod dashboard;
 pub mod desk;
 pub mod doc;
 pub mod doctor;
+pub mod guard;
 pub mod init;
 pub mod kb;
 pub mod log;
