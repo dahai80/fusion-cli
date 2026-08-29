@@ -5,6 +5,21 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-08-29
+
+### Added
+- `fusion guard` subcommand group (closes #9): read-only queries to the
+  fusion-guard daemon over UDS (JSON-RPC 2.0, newline-framed, 2s timeout).
+  Socket defaults to `/tmp/fusion-guard.sock`, overridable via `FUSION_GUARD_SOCK`.
+  - `fusion guard status` → `guard.ping` → alive, version, rules epoch.
+  - `fusion guard rules` → `guard.rule.list` → current rule set + epoch.
+  - `fusion guard audit --limit=N` → `guard.audit.list` → recent audit events.
+  - No authz decisions, no rule mutation (PRD §11 boundary respected).
+- `service/guard.rs`: sync UDS client mirroring the `fg-pyo3` `UdsClient` pattern
+  (`std::os::unix::net::UnixStream`, `BufReader` newline framing).
+- 5 unit tests for guard wire framing (JSON-RPC envelope, result/error parsing,
+  socket-path env override) — no socket or network needed. Test count 32 → 37.
+
 ## [0.2.6] - 2026-08-07
 
 ### Fixed

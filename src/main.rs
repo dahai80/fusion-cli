@@ -13,7 +13,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "fusion")]
-#[command(version = "0.2.3")]
+#[command(version = "0.2.7")]
 #[command(about = "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.", long_about = None)]
 struct Cli {
     /// 强制离线模式（默认开启）
@@ -140,6 +140,13 @@ enum Commands {
         action: cmd::doc::DocCommands,
     },
 
+    // ── Guard 安全守护 ──
+    /// Guard 安全守护查询（经 UDS，只读 status/rules/audit）
+    Guard {
+        #[command(subcommand)]
+        action: cmd::guard::GuardCommands,
+    },
+
     // ── 模型同步 ──
     /// 模型同步（对接 Fusion-Multi-Node）
     Sync {
@@ -244,6 +251,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Doc { action }) => {
             cmd::doc::handle_doc(action).await?;
+        }
+        Some(Commands::Guard { action }) => {
+            cmd::guard::handle_guard(action).await?;
         }
         Some(Commands::Sync { action }) => {
             cmd::sync::handle_sync(action).await?;

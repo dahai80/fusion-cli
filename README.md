@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.6-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.7-blue" alt="Version">
 </p>
 
 ---
@@ -239,6 +239,16 @@ Interactive terminal dashboard with real-time monitoring:
 | `status` | View Fusion-Doc service status |
 | `log [--lines=50]` | View Fusion-Doc logs |
 
+### Guard Status (`fusion guard`)
+
+Read-only queries to the fusion-guard daemon over UDS (JSON-RPC 2.0, socket `/tmp/fusion-guard.sock`, override with `FUSION_GUARD_SOCK`). No authz decisions, no rule mutation.
+
+| Command | Description |
+|---------|-------------|
+| `status` | Ping guard daemon — alive, version, rules epoch |
+| `rules` | List current guard rule set + epoch |
+| `audit [--limit=20]` | Show recent guard audit events |
+
 ---
 
 ## 🔧 Architecture
@@ -263,6 +273,7 @@ src/
 │   ├── doc.rs           # fusion doc (start/stop/status/log)
 │   ├── desk.rs          # fusion desk (real API calls)
 │   ├── sync.rs          # fusion sync (model sync)
+│   ├── guard.rs         # fusion guard (UDS JSON-RPC status/rules/audit)
 │   └── cluster.rs       # fusion cluster
 ├── service/             # Unified service layer
 │   ├── mod.rs           # Global reqwest::Client + ServiceUrls + check_url()
@@ -273,6 +284,7 @@ src/
 │   ├── desk.rs          # Fusion-Desk client (templates, tasks, history, stop, health)
 │   ├── doc.rs           # Fusion-Doc client (health check, status detail)
 │   ├── gateway.rs       # Gateway client (service discovery) (V0.2.1)
+│   ├── guard.rs         # Guard UDS client (JSON-RPC ping, rule.list, audit.list)
 │   └── health.rs        # Unified health check (check_all, check_all_with_latency)
 ├── tui/                 # TUI dashboard (V0.2.1)
 │   ├── mod.rs           # Event loop + terminal setup

@@ -1,6 +1,7 @@
 pub mod desk;
 pub mod doc;
 pub mod gateway;
+pub mod guard;
 pub mod health;
 pub mod kb;
 pub mod mlx;
