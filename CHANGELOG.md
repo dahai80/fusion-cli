@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No authz decisions, no rule mutation (PRD §11 boundary respected).
 - `service/guard.rs`: sync UDS client mirroring the `fg-pyo3` `UdsClient` pattern
   (`std::os::unix::net::UnixStream`, `BufReader` newline framing).
-- 5 unit tests for guard wire framing (JSON-RPC envelope, result/error parsing,
-  socket-path env override) — no socket or network needed. Test count 32 → 37.
+- 6 unit tests for guard wire framing (JSON-RPC envelope, result/error parsing,
+  socket-path resolution) — no socket, network, or env mutation needed. Test count 32 → 38.
 
 ## [0.2.6] - 2026-08-07
 

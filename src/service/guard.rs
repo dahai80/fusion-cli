@@ -43,10 +43,15 @@ pub struct PingResult {
     pub rules_epoch: u64,
 }
 
+fn resolve_sock_path(env_value: Option<String>) -> PathBuf {
+    match env_value {
+        Some(v) if !v.is_empty() => PathBuf::from(v),
+        _ => PathBuf::from(DEFAULT_SOCK),
+    }
+}
+
 fn sock_path() -> PathBuf {
-    std::env::var(ENV_SOCK)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(DEFAULT_SOCK))
+    resolve_sock_path(std::env::var(ENV_SOCK).ok())
 }
 
 fn call(method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
@@ -99,16 +104,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sock_path_defaults_when_env_unset() {
-        unsafe { std::env::remove_var(ENV_SOCK) };
-        assert_eq!(sock_path(), PathBuf::from(DEFAULT_SOCK));
+    fn test_resolve_sock_path_defaults_when_env_missing() {
+        assert_eq!(resolve_sock_path(None), PathBuf::from(DEFAULT_SOCK));
     }
 
     #[test]
-    fn test_sock_path_respects_env_override() {
-        unsafe { std::env::set_var(ENV_SOCK, "/tmp/custom-guard-test.sock") };
-        assert_eq!(sock_path(), PathBuf::from("/tmp/custom-guard-test.sock"));
-        unsafe { std::env::remove_var(ENV_SOCK) };
+    fn test_resolve_sock_path_defaults_when_env_empty() {
+        assert_eq!(
+            resolve_sock_path(Some(String::new())),
+            PathBuf::from(DEFAULT_SOCK)
+        );
+    }
+
+    #[test]
+    fn test_resolve_sock_path_respects_env_override() {
+        let p = resolve_sock_path(Some("/tmp/custom-guard-test.sock".to_string()));
+        assert_eq!(p, PathBuf::from("/tmp/custom-guard-test.sock"));
     }
 
     #[test]
