@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.5-blue" alt="Version">
 </p>
 
 ---
@@ -440,6 +440,28 @@ fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*`
 - [x] `fusion cluster`/`fusion sync` 重写，直连 multi-node Master（11452），不再误连网关
 - [x] 健康检查新增 Memory/Bench/MultiNode 探测
 - [x] 配置段 `[memory]`/`[bench]`/`[multinode]`
+
+### V0.3.5 — 企业级生产就绪 R2 ✅
+- [x] 审计轨迹 (`~/.fusion/audit/audit.log`): 追加式 JSONL, `ts/actor/command/outcome/duration/detail`, 凭证自动脱敏, `fusion audit view/path`
+- [x] 可观测性 metrics (`~/.fusion/metrics/metrics.json`): 请求/错误/模型拉取/KB入库/bench/服务操作 计数器 + 延迟直方图, `fusion metrics view/json/path` (JSON 导出供 Prometheus)
+- [x] A1 ServiceUrls 收敛: 删除重复 `base_url()`/`stats_url()`, 集中 `ServiceUrls::mlx_base()`, 每次调用仅一次 `from_config()`
+- [x] G1 `kb ingest` 明确提示 "尚未向量化" (完整向量化 → issue #18)
+- [x] G2 `Agent` 帮助文本定位为 "只读助手" (不夸大写/编排能力)
+- [x] 测试数 95 → 101; 全部门禁通过
+
+### V0.3.4 — 产品审计整改 ✅
+- [x] `fusion init` 生成随机 `/dev/urandom` API key（不再硬编码 `fg-admin-key`），config chmod 0600
+- [x] 配置 schema 全面 `#[serde(default)]` 逐字段默认 + 迁移（`config_version` 0.3.4）+ 损坏配置备份 —— 拒绝静默回退，容忍部分 TOML
+- [x] 路径穿越封死全部用户可控 URL 段（kb/rag/desk/modelhub/bench），统一 `validate_path_segment`
+- [x] HTTP 错误可见性统一走 `json_or_error`（15+ 处裸 `resp.json()` + 3 处 `unwrap_or_default`）
+- [x] 外部子进程（huggingface-cli/mlx_lm）启用 `kill_on_drop(true)` —— 超时真正 SIGKILL，无孤儿进程
+- [x] `rag` pid/log 父目录 `.unwrap()` 改为 `ok_or_else` 报错
+- [x] 文件日志分层（tracing-appender `~/.fusion/logs/fusion-cli.log`）与控制台并存，优雅降级
+- [x] `service restart` 轮询 health-check 等待退出（替代写死 1s sleep 竞态）
+- [x] `doctor` 新增生态服务（memory/bench/multinode/doc）+ 配置解析/版本/权限校验
+- [x] KB 入库元数据记录真实成功数（非尝试数）
+- [x] Bench sysinfo 用 `System::new()` + `refresh_memory()`（不再全量进程枚举）
+- [x] 测试数 91 → 95（路径段校验）；全部门禁通过
 
 ### V0.3.3 — 安全与可靠性加固 ✅
 - [x] `model pull` 路径穿越封死（repo-id 清洗 + canonicalize 前缀校验）

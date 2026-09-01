@@ -62,6 +62,20 @@ pub fn get_client() -> Arc<Client> {
     GLOBAL_CLIENT.clone()
 }
 
+// 共享路径段校验 (A14 修复): memory/multinode 原各有一份 byte-identical 副本。
+// 现集中到 service 层, 供所有服务 URL 路径段 (kb/rag/desk/modelhub/benchsvc) 复用。
+// 拒 '/' 和 '\', 防 id="x/../../delete" 注入额外路径段。
+pub fn validate_path_segment(field: &str, value: &str) -> anyhow::Result<()> {
+    if value.contains('/') || value.contains('\\') {
+        anyhow::bail!(
+            "invalid {}: must not contain path separators: '{}'",
+            field,
+            value
+        );
+    }
+    Ok(())
+}
+
 pub struct ServiceUrls {
     pub mlx: String,
     pub mlx_api_key: String,
@@ -97,12 +111,18 @@ impl ServiceUrls {
     }
 
     pub fn mlx_api(&self) -> String {
-        let base = self
-            .mlx
+        let base = self.mlx_base();
+        format!("{}/v1", base)
+    }
+
+    // MLX 根路径 (不含 /v1), 供 /health /stats 等非 /v1/* 端点使用。
+    // 集中 trim 逻辑, 消除各处重复 trim_end_matches('/v1') 的漂移风险 (A1 收敛)。
+    pub fn mlx_base(&self) -> String {
+        self.mlx
             .trim_end_matches('/')
             .trim_end_matches("/v1")
-            .trim_end_matches('/');
-        format!("{}/v1", base)
+            .trim_end_matches('/')
+            .to_string()
     }
 
     pub fn mlx_auth_header(&self) -> Option<(&'static str, String)> {
@@ -232,5 +252,19 @@ mod tests {
         let (name, value) = urls.mlx_auth_header().expect("header must be present");
         assert_eq!(name, "Authorization");
         assert_eq!(value, "Bearer secret-key");
+    }
+
+    // A14/P1-2: 共享路径段校验必须拦死 '/' 和 '\' (路径穿越注入)。
+    #[test]
+    fn test_validate_path_segment_rejects_separators() {
+        assert!(validate_path_segment("id", "x/../../delete").is_err());
+        assert!(validate_path_segment("id", "a\\b").is_err());
+        assert!(validate_path_segment("id", "/").is_err());
+    }
+
+    #[test]
+    fn test_validate_path_segment_accepts_safe() {
+        assert!(validate_path_segment("id", "node-1").is_ok());
+        assert!(validate_path_segment("id", "mem-abc-123").is_ok());
     }
 }

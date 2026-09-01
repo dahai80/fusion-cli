@@ -44,7 +44,7 @@ pub async fn get_health_detail() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "bench").await?;
     Ok(data)
 }
 
@@ -57,11 +57,12 @@ pub async fn list_tasks() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(10))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "bench list_tasks").await?;
     Ok(data)
 }
 
 pub async fn get_task(task_id: &str) -> Result<serde_json::Value> {
+    super::validate_path_segment("task_id", task_id)?;
     let client = get_client();
     let url = format!("{}/tasks/{}", api_base(), task_id);
     info!(url = %url, task_id = %task_id, "bench get task");
@@ -70,7 +71,7 @@ pub async fn get_task(task_id: &str) -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(10))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "bench get_task").await?;
     Ok(data)
 }
 
@@ -83,11 +84,12 @@ pub async fn list_suites() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(10))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "bench list_suites").await?;
     Ok(data)
 }
 
 pub async fn get_result(task_id: &str) -> Result<serde_json::Value> {
+    super::validate_path_segment("task_id", task_id)?;
     let client = get_client();
     let url = format!("{}/results/{}", api_base(), task_id);
     info!(url = %url, task_id = %task_id, "bench get result");
@@ -96,7 +98,7 @@ pub async fn get_result(task_id: &str) -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(10))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "bench get_result").await?;
     Ok(data)
 }
 
@@ -109,7 +111,7 @@ pub async fn results_trend() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(10))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "bench results_trend").await?;
     Ok(data)
 }
 
@@ -122,7 +124,7 @@ pub async fn list_baselines() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(10))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "bench list_baselines").await?;
     Ok(data)
 }
 
@@ -135,7 +137,7 @@ pub async fn list_gates() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(10))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "bench list_gates").await?;
     Ok(data)
 }
 
@@ -148,7 +150,7 @@ pub async fn system_resources() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "bench system_resources").await?;
     Ok(data)
 }
 

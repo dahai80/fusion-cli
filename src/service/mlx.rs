@@ -76,19 +76,8 @@ pub struct ChunkDelta {
     pub content: Option<String>,
 }
 
-fn base_url() -> String {
-    ServiceUrls::from_config().mlx_api()
-}
-
-fn stats_url() -> String {
-    ServiceUrls::from_config()
-        .mlx
-        .trim_end_matches('/')
-        .trim_end_matches("/v1")
-        .trim_end_matches('/')
-        .to_string()
-}
-
+// A1 收敛: 删除独立 base_url()/stats_url() helper — 它们各自调 from_config, 与
+// 同函数内的 service_urls() 产生重复取配置。改为在调用点直接用 urls.mlx_api()/mlx_base()。
 fn service_urls() -> ServiceUrls {
     ServiceUrls::from_config()
 }
@@ -104,11 +93,7 @@ fn apply_auth(builder: reqwest::RequestBuilder, urls: &ServiceUrls) -> reqwest::
 pub async fn health_check() -> Result<bool> {
     let client = get_client();
     let urls = service_urls();
-    let base: &str = &base_url();
-    let base = base
-        .trim_end_matches('/')
-        .trim_end_matches("/v1")
-        .trim_end_matches('/');
+    let base = urls.mlx_base();
     let url = format!("{}/health", base);
     let req = apply_auth(client.get(&url), &urls);
     match req.timeout(Duration::from_secs(2)).send().await {
@@ -123,7 +108,7 @@ pub async fn health_check() -> Result<bool> {
 pub async fn list_models() -> Result<Vec<ModelInfo>> {
     let client = get_client();
     let urls = service_urls();
-    let url = format!("{}/models", base_url());
+    let url = format!("{}/models", urls.mlx_api());
     let resp = apply_auth(client.get(&url), &urls)
         .timeout(Duration::from_secs(5))
         .send()
@@ -136,7 +121,7 @@ pub async fn list_models() -> Result<Vec<ModelInfo>> {
 pub async fn chat_completion(request: &InferenceRequest) -> Result<InferenceResponse> {
     let client = get_client();
     let urls = service_urls();
-    let url = format!("{}/chat/completions", base_url());
+    let url = format!("{}/chat/completions", urls.mlx_api());
     info!(url = %url, model = %request.model, "Sending chat completion request");
     let resp = apply_auth(client.post(&url), &urls)
         .json(request)
@@ -365,7 +350,7 @@ pub async fn chat_completion_stream(request: &InferenceRequest) -> Result<reqwes
     stream_request.stream = Some(true);
     let client = get_client();
     let urls = service_urls();
-    let url = format!("{}/chat/completions", base_url());
+    let url = format!("{}/chat/completions", urls.mlx_api());
     info!(url = %url, model = %stream_request.model, "Sending streaming chat request");
     let resp = apply_auth(client.post(&url), &urls)
         .json(&stream_request)
@@ -378,7 +363,7 @@ pub async fn chat_completion_stream(request: &InferenceRequest) -> Result<reqwes
 pub async fn create_embedding(model: &str, input: &str) -> Result<Vec<f64>> {
     let client = get_client();
     let urls = service_urls();
-    let url = format!("{}/embeddings", base_url());
+    let url = format!("{}/embeddings", urls.mlx_api());
     let payload = serde_json::json!({
         "model": model,
         "input": input,
@@ -396,7 +381,7 @@ pub async fn create_embedding(model: &str, input: &str) -> Result<Vec<f64>> {
 pub async fn get_server_stats() -> Result<serde_json::Value> {
     let client = get_client();
     let urls = service_urls();
-    let url = format!("{}/stats", stats_url());
+    let url = format!("{}/stats", urls.mlx_base());
     info!(url = %url, "Fetching MLX server stats");
     let resp = apply_auth(client.get(&url), &urls)
         .timeout(Duration::from_secs(5))
@@ -542,12 +527,8 @@ mod tests {
     fn test_stats_url_strips_v1_suffix() {
         let mut urls = ServiceUrls::from_config();
         urls.mlx = "http://localhost:11432/v1".to_string();
-        let s = urls
-            .mlx
-            .trim_end_matches("/v1")
-            .trim_end_matches('/')
-            .to_string();
-        assert_eq!(s, "http://localhost:11432");
+        // A1 收敛: stats 端点用 mlx_base() (不含 /v1), 逻辑集中到 ServiceUrls。
+        assert_eq!(urls.mlx_base(), "http://localhost:11432");
     }
 
     #[test]

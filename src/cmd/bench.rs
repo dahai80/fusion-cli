@@ -165,7 +165,8 @@ async fn bench_mem(model: &str) -> Result<()> {
     let models = crate::service::mlx::list_models().await;
 
     use sysinfo::System;
-    let mut sys = System::new_all();
+    // P3-4 修复: System::new_all() 枚举全部进程/组件, bench 仅需内存 → new()+refresh_memory 足够, 省开销。
+    let mut sys = System::new();
     sys.refresh_memory();
 
     if json_mode {
@@ -507,7 +508,7 @@ async fn bench_report(model: &str, output: &str) -> Result<()> {
     let speed_result = crate::service::mlx::generate_tokens(model, 128).await;
 
     use sysinfo::System;
-    let mut sys = System::new_all();
+    let mut sys = System::new();
     sys.refresh_memory();
 
     let (speed_section, server_section) = {

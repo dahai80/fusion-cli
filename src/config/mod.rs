@@ -20,157 +20,315 @@ pub enum ConfigCommands {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FusionConfig {
-    pub model: ModelConfig,
-    pub kb: KbConfig,
-    pub mlx: MlxConfig,
-    pub modelhub: ModelhubConfig,
-    pub rag: RagConfig,
-    pub desk: DeskConfig,
-    pub doc: DocConfig,
-    pub memory: MemoryConfig,
-    pub bench: BenchConfig,
-    pub multinode: MultinodeConfig,
-    pub log: LogConfig,
+    // config_version: 升级迁移依据。缺失时迁移函数补默认, 不阻断解析。
     #[serde(default)]
-    pub gateway: Option<GatewayConfig>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GatewayConfig {
-    pub enabled: bool,
-    #[serde(default = "default_gateway_url")]
-    pub base_url: String,
-}
-
-fn default_gateway_url() -> String {
-    "http://localhost:11432".to_string()
+    pub config_version: String,
+    #[serde(default)]
+    pub model: ModelConfig,
+    #[serde(default)]
+    pub kb: KbConfig,
+    #[serde(default)]
+    pub mlx: MlxConfig,
+    #[serde(default)]
+    pub modelhub: ModelhubConfig,
+    #[serde(default)]
+    pub rag: RagConfig,
+    #[serde(default)]
+    pub desk: DeskConfig,
+    #[serde(default)]
+    pub doc: DocConfig,
+    #[serde(default)]
+    pub memory: MemoryConfig,
+    #[serde(default)]
+    pub bench: BenchConfig,
+    #[serde(default)]
+    pub multinode: MultinodeConfig,
+    #[serde(default)]
+    pub log: LogConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelConfig {
+    #[serde(default = "default_model_path")]
     pub default_path: String,
+}
+
+fn default_model_path() -> String {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".fusion/models")
+        .to_string_lossy()
+        .to_string()
+}
+
+impl Default for ModelConfig {
+    fn default() -> Self {
+        Self {
+            default_path: default_model_path(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct KbConfig {
+    #[serde(default = "default_kb_path")]
     pub default_path: String,
+    #[serde(default = "default_kb_url")]
     pub base_url: String,
+}
+
+fn default_kb_path() -> String {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".fusion/kb")
+        .to_string_lossy()
+        .to_string()
+}
+
+fn default_kb_url() -> String {
+    "http://localhost:11434".to_string()
+}
+
+impl Default for KbConfig {
+    fn default() -> Self {
+        Self {
+            default_path: default_kb_path(),
+            base_url: default_kb_url(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MlxConfig {
+    #[serde(default = "default_mlx_ctx")]
     pub default_ctx: u32,
+    #[serde(default = "default_mlx_cache_enabled")]
     pub enable_cache: bool,
+    #[serde(default = "default_mlx_url")]
     pub base_url: String,
     #[serde(default = "default_mlx_api_key")]
     pub api_key: String,
+    #[serde(default = "default_mlx_cache_size")]
     pub cache_size: String,
+    #[serde(default = "default_mlx_batch")]
     pub max_batch_size: u32,
 }
 
+fn default_mlx_ctx() -> u32 {
+    4096
+}
+fn default_mlx_cache_enabled() -> bool {
+    true
+}
+fn default_mlx_url() -> String {
+    "http://localhost:11432".to_string()
+}
 fn default_mlx_api_key() -> String {
     "fg-admin-key".to_string()
+}
+fn default_mlx_cache_size() -> String {
+    "4GB".to_string()
+}
+fn default_mlx_batch() -> u32 {
+    8
+}
+
+impl Default for MlxConfig {
+    fn default() -> Self {
+        Self {
+            default_ctx: default_mlx_ctx(),
+            enable_cache: default_mlx_cache_enabled(),
+            base_url: default_mlx_url(),
+            api_key: default_mlx_api_key(),
+            cache_size: default_mlx_cache_size(),
+            max_batch_size: default_mlx_batch(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelhubConfig {
+    #[serde(default = "default_modelhub_url")]
     pub base_url: String,
+}
+
+fn default_modelhub_url() -> String {
+    "http://localhost:11444".to_string()
+}
+
+impl Default for ModelhubConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_modelhub_url(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RagConfig {
+    #[serde(default = "default_rag_url")]
     pub base_url: String,
+}
+
+fn default_rag_url() -> String {
+    "http://localhost:11436".to_string()
+}
+
+impl Default for RagConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_rag_url(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeskConfig {
+    #[serde(default = "default_desk_url")]
     pub base_url: String,
+}
+
+fn default_desk_url() -> String {
+    "http://localhost:9000".to_string()
+}
+
+impl Default for DeskConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_desk_url(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DocConfig {
+    #[serde(default = "default_doc_url")]
     pub base_url: String,
+}
+
+fn default_doc_url() -> String {
+    "http://localhost:11449".to_string()
+}
+
+impl Default for DocConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_doc_url(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MemoryConfig {
+    #[serde(default = "default_memory_url")]
     pub base_url: String,
     #[serde(default)]
     pub api_key: String,
+}
+
+fn default_memory_url() -> String {
+    "http://localhost:11435".to_string()
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_memory_url(),
+            api_key: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BenchConfig {
+    #[serde(default = "default_bench_url")]
     pub base_url: String,
+}
+
+fn default_bench_url() -> String {
+    "http://localhost:11467".to_string()
+}
+
+impl Default for BenchConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_bench_url(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MultinodeConfig {
+    #[serde(default = "default_multinode_url")]
     pub base_url: String,
     #[serde(default)]
     pub api_key: String,
 }
 
+fn default_multinode_url() -> String {
+    "http://localhost:11452".to_string()
+}
+
+impl Default for MultinodeConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_multinode_url(),
+            api_key: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LogConfig {
+    #[serde(default = "default_log_level")]
     pub level: String,
 }
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+impl Default for LogConfig {
+    fn default() -> Self {
+        Self {
+            level: default_log_level(),
+        }
+    }
+}
+
+pub const CURRENT_CONFIG_VERSION: &str = "0.3.5";
 
 impl Default for FusionConfig {
     fn default() -> Self {
         Self {
-            model: ModelConfig {
-                default_path: dirs::home_dir()
-                    .unwrap_or_default()
-                    .join(".fusion/models")
-                    .to_string_lossy()
-                    .to_string(),
-            },
-            kb: KbConfig {
-                default_path: dirs::home_dir()
-                    .unwrap_or_default()
-                    .join(".fusion/kb")
-                    .to_string_lossy()
-                    .to_string(),
-                base_url: "http://localhost:11434".to_string(),
-            },
-            mlx: MlxConfig {
-                default_ctx: 4096,
-                enable_cache: true,
-                base_url: "http://localhost:11432".to_string(),
-                api_key: default_mlx_api_key(),
-                cache_size: "4GB".to_string(),
-                max_batch_size: 8,
-            },
-            modelhub: ModelhubConfig {
-                base_url: "http://localhost:11444".to_string(),
-            },
-            rag: RagConfig {
-                base_url: "http://localhost:11436".to_string(),
-            },
-            desk: DeskConfig {
-                base_url: "http://localhost:9000".to_string(),
-            },
-            doc: DocConfig {
-                base_url: "http://localhost:11449".to_string(),
-            },
-            memory: MemoryConfig {
-                base_url: "http://localhost:11435".to_string(),
-                api_key: String::new(),
-            },
-            bench: BenchConfig {
-                base_url: "http://localhost:11467".to_string(),
-            },
-            multinode: MultinodeConfig {
-                base_url: "http://localhost:11452".to_string(),
-                api_key: String::new(),
-            },
-            log: LogConfig {
-                level: "info".to_string(),
-            },
-            gateway: None,
+            config_version: CURRENT_CONFIG_VERSION.to_string(),
+            model: ModelConfig::default(),
+            kb: KbConfig::default(),
+            mlx: MlxConfig::default(),
+            modelhub: ModelhubConfig::default(),
+            rag: RagConfig::default(),
+            desk: DeskConfig::default(),
+            doc: DocConfig::default(),
+            memory: MemoryConfig::default(),
+            bench: BenchConfig::default(),
+            multinode: MultinodeConfig::default(),
+            log: LogConfig::default(),
         }
     }
+}
+
+// 升级迁移: 老配置缺 config_version 或版本低于当前 → 标记并补默认段。
+// 各子结构体已 #[serde(default)], 缺段不报错; 此函数仅补 version 字段以便后续诊断。
+fn migrate_config(mut cfg: FusionConfig) -> FusionConfig {
+    if cfg.config_version != CURRENT_CONFIG_VERSION {
+        tracing::info!(
+            from = %cfg.config_version,
+            to = CURRENT_CONFIG_VERSION,
+            "Migrating config version"
+        );
+        cfg.config_version = CURRENT_CONFIG_VERSION.to_string();
+    }
+    cfg
 }
 
 pub fn get_config_path() -> PathBuf {
@@ -180,24 +338,42 @@ pub fn get_config_path() -> PathBuf {
         .join("config.toml")
 }
 
+// P1-8: 仅解析, 不读盘不回退, 供 doctor 校验配置健康度 (是否可解析)。
+pub fn parse_config(content: &str) -> Result<FusionConfig, toml::de::Error> {
+    toml::from_str::<FusionConfig>(content).map(migrate_config)
+}
+
 pub fn load_config() -> FusionConfig {
     let path = get_config_path();
     if path.exists() {
         match std::fs::read_to_string(&path) {
             Ok(content) => match toml::from_str::<FusionConfig>(&content) {
-                Ok(cfg) => cfg,
+                Ok(cfg) => migrate_config(cfg),
                 Err(e) => {
-                    // 不再静默吞掉解析错误: 配置文件损坏会以默认值运行, 但必须留痕,
-                    // 否则用户改了 base_url 笔误 → 所有服务 "stopped" 却无任何线索。
+                    // F1/A4/O1 修复: 不再静默回退。配置损坏必须:
+                    // (1) 终端可见 eprintln (交互用户立刻看到, 不依赖日志文件)
+                    // (2) 备份坏文件到 config.toml.bak.<ts> 防止用户丢失手改内容
+                    // (3) 再回退默认 (保证 CLI 可用)
+                    // 否则单段笔误 → 全服务 "stopped" 无线索, 运维误查网络。
+                    eprintln!(
+                        "⚠️  config.toml parse failed, falling back to defaults: {}",
+                        e
+                    );
+                    eprintln!("   Path: {}", path.display());
+                    backup_corrupt_config(&path, &content);
                     tracing::error!(
                         path = %path.display(),
                         error = %e,
-                        "Failed to parse config.toml, falling back to defaults"
+                        "Failed to parse config.toml, backed up and falling back to defaults"
                     );
                     FusionConfig::default()
                 }
             },
             Err(e) => {
+                eprintln!(
+                    "⚠️  config.toml unreadable, falling back to defaults: {}",
+                    e
+                );
                 tracing::error!(
                     path = %path.display(),
                     error = %e,
@@ -208,6 +384,18 @@ pub fn load_config() -> FusionConfig {
         }
     } else {
         FusionConfig::default()
+    }
+}
+
+// 备份损坏/旧配置, 防升级或笔误时丢失用户手改内容。时间戳来自系统 (非 workflow 限制, 此为运行时)。
+fn backup_corrupt_config(path: &std::path::Path, content: &str) {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let bak = path.with_extension(format!("toml.bak.{}", ts));
+    if std::fs::write(&bak, content).is_ok() {
+        eprintln!("   Backed up original to: {}", bak.display());
     }
 }
 
@@ -259,7 +447,7 @@ fn list_config() -> Result<()> {
     println!();
     println!("{}", config_str);
     println!("  Use `fusion config set <key> <value>` to modify.");
-    println!("  Built-in keys: model.default-path, kb.default-path, kb.base-url,");
+    println!("  Built-in keys: config-version, model.default-path, kb.default-path, kb.base-url,");
     println!(
         "    mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size,"
     );
@@ -273,6 +461,7 @@ fn list_config() -> Result<()> {
 fn get_config(key: String) -> Result<()> {
     let config = load_config();
     let value = match key.as_str() {
+        "config-version" => config.config_version.clone(),
         "model.default-path" => config.model.default_path.clone(),
         "kb.default-path" => config.kb.default_path.clone(),
         "kb.base-url" => config.kb.base_url.clone(),
@@ -295,7 +484,7 @@ fn get_config(key: String) -> Result<()> {
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
             println!(
-                "  Available keys: model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, memory.base-url, memory.api-key, bench.base-url, multinode.base-url, multinode.api-key, log.level"
+                "  Available keys: config-version, model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, memory.base-url, memory.api-key, bench.base-url, multinode.base-url, multinode.api-key, log.level"
             );
             return Ok(());
         }
@@ -423,14 +612,39 @@ mod tests {
     }
 
     #[test]
-    fn test_default_gateway_is_none() {
-        let config = FusionConfig::default();
-        assert!(config.gateway.is_none());
-    }
-
-    #[test]
     fn test_default_log_level_info() {
         let config = FusionConfig::default();
         assert_eq!(config.log.level, "info");
+    }
+
+    #[test]
+    fn test_default_config_version() {
+        let config = FusionConfig::default();
+        assert_eq!(config.config_version, CURRENT_CONFIG_VERSION);
+    }
+
+    // A5 修复回归: 老配置只含 [mlx] 段, 缺其余所有段 → 应解析成功并补默认, 不再整文件回退。
+    #[test]
+    fn test_partial_config_parses_with_defaults() {
+        let toml = r#"
+[mlx]
+base_url = "http://10.0.0.5:11432"
+api_key = "remote-key"
+"#;
+        let cfg: FusionConfig = toml::from_str(toml).expect("partial config must parse");
+        assert_eq!(cfg.mlx.base_url, "http://10.0.0.5:11432");
+        assert_eq!(cfg.mlx.api_key, "remote-key");
+        // 缺失段补默认
+        assert_eq!(cfg.kb.base_url, "http://localhost:11434");
+        assert_eq!(cfg.memory.base_url, "http://localhost:11435");
+        assert_eq!(cfg.multinode.base_url, "http://localhost:11452");
+    }
+
+    // 单段笔误 (此处 [mlx] 缺右括号) 仍应解析失败 → load_config 走备份+回退路径。
+    #[test]
+    fn test_malformed_toml_fails_to_parse() {
+        let toml = "[mlx\nbase_url = \"x\"";
+        let res: Result<FusionConfig, _> = toml::from_str(toml);
+        assert!(res.is_err(), "malformed TOML must fail parse");
     }
 }

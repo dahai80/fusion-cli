@@ -8,7 +8,7 @@ use tabled::{
 
 use crate::service::ServiceUrls;
 use crate::service::health;
-use crate::service::{desk, doc, kb, modelhub, rag};
+use crate::service::{desk, doc, kb, mlx, modelhub, rag};
 use crate::utils::output::is_json_mode;
 
 #[derive(Subcommand)]
@@ -297,9 +297,45 @@ async fn service_stop(service: Option<String>) -> Result<()> {
 
 async fn service_restart(service: Option<String>) -> Result<()> {
     service_stop(service.clone()).await?;
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    // P1-7 修复: 之前 sleep(1s) 硬编码, 服务未真正退出就 start → 端口占用失败。
+    // 改为轮询 health_check 直到 down (最多 5s), 再 start。
+    if !wait_for_exit(service.as_deref(), std::time::Duration::from_secs(5)).await {
+        println!(
+            "  {} service did not exit within 5s, starting anyway",
+            "⚠️".yellow()
+        );
+    }
     service_start(service).await?;
     Ok(())
+}
+
+// P1-7: 轮询服务是否已停止。返回 true 表示确认 down (或原本就 down)。
+async fn wait_for_exit(service: Option<&str>, deadline: std::time::Duration) -> bool {
+    let checker: Box<
+        dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>,
+    > = match service {
+        Some("mlx") => Box::new(|| Box::pin(async { mlx::health_check().await.unwrap_or(false) })),
+        Some("kb") => Box::new(|| Box::pin(async { kb::health_check().await.unwrap_or(false) })),
+        Some("modelhub") => {
+            Box::new(|| Box::pin(async { modelhub::health_check().await.unwrap_or(false) }))
+        }
+        Some("desk") => {
+            Box::new(|| Box::pin(async { desk::health_check().await.unwrap_or(false) }))
+        }
+        Some("rag") => Box::new(|| Box::pin(async { rag::health_check().await.unwrap_or(false) })),
+        Some("doc") => Box::new(|| Box::pin(async { doc::health_check().await.unwrap_or(false) })),
+        _ => return true,
+    };
+    let start = std::time::Instant::now();
+    loop {
+        if !checker().await {
+            return true;
+        }
+        if start.elapsed() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
 }
 
 async fn service_log(service: Option<String>, lines: usize) -> Result<()> {

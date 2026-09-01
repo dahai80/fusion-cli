@@ -161,7 +161,37 @@ pub async fn run() -> Result<()> {
     check_service("Fusion-Desk", desk::health_check().await.unwrap_or(false)).await;
     println!();
 
-    // 10. 依赖完整性
+    // 9b. 其余生态服务 (memory/bench/multinode/doc)
+    println!("{}", "🧩 Ecosystem Services".bold());
+    check_service(
+        "fusion-memory",
+        crate::service::memory::health_check()
+            .await
+            .unwrap_or(false),
+    )
+    .await;
+    check_service(
+        "fusion-bench",
+        crate::service::benchsvc::health_check()
+            .await
+            .unwrap_or(false),
+    )
+    .await;
+    check_service(
+        "fusion-multi-node",
+        crate::service::multinode::health_check()
+            .await
+            .unwrap_or(false),
+    )
+    .await;
+    check_service(
+        "Fusion-Doc",
+        crate::service::doc::health_check().await.unwrap_or(false),
+    )
+    .await;
+    println!();
+
+    // 10. 依赖完整性 + 版本
     println!("{}", "📦 Dependency Check".bold());
     println!("  {} Rust toolchain: stable", "✅".green());
     println!("  {} macOS: {}", "✅".green(), os_name.cyan());
@@ -172,7 +202,7 @@ pub async fn run() -> Result<()> {
     );
     println!();
 
-    // 11. 权限检查
+    // 11. 权限检查 + 配置校验
     println!("{}", "🔐 Permission Check".bold());
     let home = dirs::home_dir().unwrap_or_default();
     let fusion_dir = home.join(".fusion");
@@ -189,6 +219,76 @@ pub async fn run() -> Result<()> {
             fusion_dir.display().to_string().cyan()
         );
     }
+    let fusion_cli = std::env::current_exe().unwrap_or_default();
+    if fusion_cli.exists() {
+        println!(
+            "  {} Binary: {}",
+            "✅".green(),
+            fusion_cli.display().to_string().cyan()
+        );
+    }
+
+    // P1-8 修复: 配置文件校验 — 解析是否成功 / 权限是否 0600 / config_version 是否最新。
+    let config_path = crate::config::get_config_path();
+    if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+        match crate::config::parse_config(&content) {
+            Ok(cfg) => {
+                println!(
+                    "  {} Config: {} (config_version: {})",
+                    "✅".green(),
+                    config_path.display().to_string().cyan(),
+                    cfg.config_version.cyan()
+                );
+                if cfg.config_version != crate::config::CURRENT_CONFIG_VERSION {
+                    println!(
+                        "  {} Config version stale ({} → {}): run {} to migrate",
+                        "⚠️".yellow(),
+                        cfg.config_version,
+                        crate::config::CURRENT_CONFIG_VERSION,
+                        "fusion config set config-version 0.3.5".cyan()
+                    );
+                }
+            }
+            Err(e) => {
+                println!(
+                    "  {} Config parse failed: {} ({})",
+                    "❌".red(),
+                    config_path.display(),
+                    e
+                );
+                println!(
+                    "     A backup was saved as config.toml.bak.* — re-run `fusion init` to regenerate."
+                );
+            }
+        }
+        // 权限检查: 含 api_key 的 config 应 0600, 0644 世界可读 = 明文密钥泄露 (P0-1 关联)。
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&config_path) {
+                let mode = meta.permissions().mode();
+                if mode & 0o077 != 0 {
+                    println!(
+                        "  {} Config perms {:o} too open (should be 0600): fix with {}",
+                        "⚠️".yellow(),
+                        mode & 0o777,
+                        "fusion init".cyan()
+                    );
+                } else {
+                    println!("  {} Config perms: 0600 (owner-only)", "✅".green());
+                }
+            }
+        }
+    } else {
+        println!(
+            "  {} No config at {} — run {}",
+            "ℹ️".blue(),
+            config_path.display().to_string().cyan(),
+            "fusion init".cyan()
+        );
+    }
+    println!();
     let fusion_cli = std::env::current_exe().unwrap_or_default();
     if fusion_cli.exists() {
         println!(

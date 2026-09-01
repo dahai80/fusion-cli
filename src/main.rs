@@ -64,6 +64,16 @@ enum Commands {
         #[command(subcommand)]
         action: config::ConfigCommands,
     },
+    /// 审计轨迹查看 (合规只读)
+    Audit {
+        #[command(subcommand)]
+        action: cmd::audit::AuditCommands,
+    },
+    /// 可观测性 metrics 快照
+    Metrics {
+        #[command(subcommand)]
+        action: cmd::metrics::MetricsCommands,
+    },
     /// 日志管理
     Log {
         #[command(subcommand)]
@@ -184,7 +194,7 @@ enum Commands {
     },
 
     // ── AI Agent ──
-    /// AI Agent 模式（带工具调用）
+    /// AI 只读助手 (带只读工具调用: list_models/model_info/health/bench_speed)
     Agent {
         /// 输入提示
         prompt: String,
@@ -227,7 +237,77 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn async_main(cli: Cli) -> anyhow::Result<()> {
+    // 审计轨迹: 记录命令标签 + 耗时 + 结果。match 消费 cli.command, 故先提取标签。
+    let audit_cmd = audit_label(&cli.command);
+    let audit_start = std::time::Instant::now();
+
     // 执行命令
+    let result = dispatch(cli).await;
+
+    let (outcome, detail) = match &result {
+        Ok(_) => ("ok".to_string(), String::new()),
+        Err(e) => ("error".to_string(), e.to_string()),
+    };
+    let elapsed_ms = audit_start.elapsed().as_millis() as u64;
+    crate::utils::audit::record(&audit_cmd, &outcome, elapsed_ms, &detail);
+
+    // 可观测性: 按命令类型增量计数 + 记录延迟。
+    crate::utils::metrics::inc_request();
+    if outcome == "error" {
+        crate::utils::metrics::inc_request_error();
+    }
+    match audit_cmd.as_str() {
+        "model" => crate::utils::metrics::inc_model_pull(),
+        "kb" => crate::utils::metrics::inc_kb_ingest(),
+        "bench" => crate::utils::metrics::inc_bench_run(),
+        "service" | "rag" | "doc" => crate::utils::metrics::inc_service_op(),
+        _ => {}
+    }
+    crate::utils::metrics::observe_latency_ms(elapsed_ms);
+    // 落盘快照 (旁路, 失败仅记 tracing 不阻断)。
+    if let Err(e) = crate::utils::metrics::flush() {
+        tracing::error!(error = %e, "metrics flush failed");
+    }
+
+    result
+}
+
+// 提取命令的人类可读标签 (不消费 Commands, 不读子命令参数 — 避免给 15 个子命令 enum 加 Debug,
+// 且敏感参数绝不进审计)。仅记录顶层命令名。
+fn audit_label(cmd: &Option<Commands>) -> String {
+    match cmd {
+        None => "help".to_string(),
+        Some(Commands::Version) => "version".to_string(),
+        Some(Commands::Doctor) => "doctor".to_string(),
+        Some(Commands::Init) => "init".to_string(),
+        Some(Commands::Completions { .. }) => "completions".to_string(),
+        Some(Commands::Config { .. }) => "config".to_string(),
+        Some(Commands::Audit { .. }) => "audit".to_string(),
+        Some(Commands::Metrics { .. }) => "metrics".to_string(),
+        Some(Commands::Log { .. }) => "log".to_string(),
+        Some(Commands::Model { .. }) => "model".to_string(),
+        Some(Commands::Chat { .. }) => "chat".to_string(),
+        Some(Commands::Run { .. }) => "run".to_string(),
+        Some(Commands::Code { .. }) => "code".to_string(),
+        Some(Commands::Embed { .. }) => "embed".to_string(),
+        Some(Commands::Kb { .. }) => "kb".to_string(),
+        Some(Commands::Bench { .. }) => "bench".to_string(),
+        Some(Commands::Service { .. }) => "service".to_string(),
+        Some(Commands::Rag { .. }) => "rag".to_string(),
+        Some(Commands::Desk { .. }) => "desk".to_string(),
+        Some(Commands::Doc { .. }) => "doc".to_string(),
+        Some(Commands::Guard { .. }) => "guard".to_string(),
+        Some(Commands::Net { .. }) => "net".to_string(),
+        Some(Commands::Memory { .. }) => "memory".to_string(),
+        Some(Commands::Eval { .. }) => "eval".to_string(),
+        Some(Commands::Sync { .. }) => "sync".to_string(),
+        Some(Commands::Cluster { .. }) => "cluster".to_string(),
+        Some(Commands::Agent { .. }) => "agent".to_string(),
+        Some(Commands::Dashboard) => "dashboard".to_string(),
+    }
+}
+
+async fn dispatch(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
         None => {
             // 无子命令时显示帮助
@@ -249,6 +329,12 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         }
         Some(Commands::Config { action }) => {
             config::handle_config(action).await?;
+        }
+        Some(Commands::Audit { action }) => {
+            cmd::audit::handle_audit(action).await?;
+        }
+        Some(Commands::Metrics { action }) => {
+            cmd::metrics::handle_metrics(action).await?;
         }
         Some(Commands::Log { action }) => {
             cmd::log::handle_log(action).await?;

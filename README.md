@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.5-blue" alt="Version">
 </p>
 
 ---
@@ -440,6 +440,28 @@ fusion-mlx inference routes through the gateway (`http://localhost:11432`, OpenA
 - [x] `fusion cluster`/`fusion sync` rewritten to route to multi-node Master (11452), not the gateway
 - [x] Health checks probe Memory/Bench/MultiNode
 - [x] Config sections `[memory]`/`[bench]`/`[multinode]`
+
+### V0.3.5 — Enterprise Production-Readiness R2 ✅
+- [x] Audit trail (`~/.fusion/audit/audit.log`): append-only JSONL, `ts/actor/command/outcome/duration/detail`, credential auto-redact, `fusion audit view/path`
+- [x] Observability metrics (`~/.fusion/metrics/metrics.json`): request/error/model-pull/kb-ingest/bench-run/service-op counters + latency histogram, `fusion metrics view/json/path` (JSON export for Prometheus)
+- [x] A1 ServiceUrls consolidation: removed duplicate `base_url()`/`stats_url()`, centralized `ServiceUrls::mlx_base()`, single `from_config()` per call
+- [x] G1 `kb ingest` explicit "not yet vectorized" notice (full vectorization → issue #18)
+- [x] G2 `Agent` help text = "read-only assistant" (no write/orchestration over-promise)
+- [x] Test count 95 → 101; all gates green
+
+### V0.3.4 — Product Audit Remediation ✅
+- [x] `fusion init` generates random `/dev/urandom` API key (no hardcoded `fg-admin-key`) and chmods config 0600
+- [x] Config schema uses `#[serde(default)]` per-field + migration (`config_version` 0.3.4) + corrupt-config backup — no silent fallback, partial TOML tolerated
+- [x] Path traversal sealed across all user-controlled URL segments (kb/rag/desk/modelhub/bench) via shared `validate_path_segment`
+- [x] HTTP error visibility unified through `json_or_error` (15+ bare `resp.json()` + 3 `unwrap_or_default` sites)
+- [x] External child commands (huggingface-cli/mlx_lm) use `kill_on_drop(true)` — timeout actually SIGKILLs, no orphans
+- [x] `rag` pid/log parent-dir `.unwrap()` replaced with `ok_or_else` error
+- [x] File logging layered (tracing-appender `~/.fusion/logs/fusion-cli.log`) with console, graceful fallback
+- [x] `service restart` polls health-check until exit (replaces hardcoded 1s sleep race)
+- [x] `doctor` adds ecosystem services (memory/bench/multinode/doc) + config parse/version/permission validation
+- [x] KB ingest records real success count (not attempted count) in metadata
+- [x] Bench sysinfo uses `System::new()` + `refresh_memory()` (no full process enumeration)
+- [x] Test count 91 → 95 (path-segment validation); all gates green
 
 ### V0.3.3 — Security & Reliability Hardening ✅
 - [x] `model pull` path traversal sealed (repo-id sanitize + canonicalize prefix check)

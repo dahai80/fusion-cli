@@ -21,15 +21,9 @@ fn base_url() -> String {
 }
 
 // 校验路径段不含 '/', 防止 node_id="x/../delete" 注入额外路径段。
+// A14 修复: 集中到 super::validate_path_segment, 本地转发保持调用点不变。
 fn validate_path_segment(field: &str, value: &str) -> Result<()> {
-    if value.contains('/') || value.contains('\\') {
-        anyhow::bail!(
-            "invalid {}: must not contain path separators: '{}'",
-            field,
-            value
-        );
-    }
-    Ok(())
+    super::validate_path_segment(field, value)
 }
 
 fn auth_header() -> Option<(&'static str, String)> {

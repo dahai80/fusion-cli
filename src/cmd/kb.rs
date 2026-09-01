@@ -35,13 +35,39 @@ pub enum KbCommands {
 pub async fn handle_kb(action: KbCommands) -> Result<()> {
     match action {
         KbCommands::List => list_kb(),
-        KbCommands::Create { name } => create_kb(name).await,
-        KbCommands::Delete { name } => delete_kb(name).await,
-        KbCommands::Ingest { name, path } => ingest_kb(name, path).await,
-        KbCommands::Query { name, question } => query_kb(name, question).await,
-        KbCommands::Clear { name } => clear_kb(name).await,
-        KbCommands::Stat { name } => stat_kb(name).await,
+        KbCommands::Create { name } => {
+            check_kb_name(&name)?;
+            create_kb(name).await
+        }
+        KbCommands::Delete { name } => {
+            check_kb_name(&name)?;
+            delete_kb(name).await
+        }
+        KbCommands::Ingest { name, path } => {
+            check_kb_name(&name)?;
+            ingest_kb(name, path).await
+        }
+        KbCommands::Query { name, question } => {
+            check_kb_name(&name)?;
+            query_kb(name, question).await
+        }
+        KbCommands::Clear { name } => {
+            check_kb_name(&name)?;
+            clear_kb(name).await
+        }
+        KbCommands::Stat { name } => {
+            check_kb_name(&name)?;
+            stat_kb(name).await
+        }
     }
+}
+
+// S5 修复: kb 名称经路径段校验, 防 delete "../models" 删除 ~/.fusion/models/ 等目录穿越。
+fn check_kb_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("knowledge base name must not be empty");
+    }
+    crate::service::validate_path_segment("kb name", name)
 }
 
 fn list_kb() -> Result<()> {
@@ -172,27 +198,48 @@ async fn ingest_kb(name: String, path: String) -> Result<()> {
     );
     pb.set_message("Ingesting...");
 
+    // F6 修复: 记录成功复制数 (非 files.len() 尝试数), 元数据写真实入库文档数。
+    let mut success_count = 0u64;
     for file in &files {
         let file_name = file.file_name().unwrap_or_default().to_string_lossy();
         let dest = kb_dir.join(&*file_name);
         match std::fs::copy(file, &dest) {
-            Ok(_) => {}
+            Ok(_) => success_count += 1,
             Err(e) => println!("    {} Failed: {} ({})", "⚠️".yellow(), file_name, e),
         }
         pb.inc(1);
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
 
-    pb.finish_with_message(format!("✅ Ingested {} files into {}", files.len(), name));
+    pb.finish_with_message(format!(
+        "✅ Ingested {}/{} files into {}",
+        success_count,
+        files.len(),
+        name
+    ));
+    if success_count < files.len() as u64 {
+        println!(
+            "  {} {} file(s) failed to ingest; see messages above.",
+            "⚠️".yellow(),
+            files.len() as u64 - success_count
+        );
+    }
 
     let meta_path = kb_dir.join("_meta.json");
     if let Ok(content) = std::fs::read_to_string(&meta_path)
         && let Ok(mut meta) = serde_json::from_str::<serde_json::Value>(&content)
     {
-        meta["document_count"] = serde_json::json!(files.len());
+        meta["document_count"] = serde_json::json!(success_count);
         meta["updated_at"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
         let _ = std::fs::write(&meta_path, serde_json::to_string_pretty(&meta)?);
     }
+
+    // G1 修复: 明确告知用户本操作仅为文件归集 (待向量化), 非实时检索入库。
+    // 真正向量化检索需 fusion-rag 服务对文档做 embedding + 索引 (见后续 upstream 联动)。
+    println!(
+        "  {} Files staged in KB dir (not yet vectorized). Run fusion-rag indexing for retrieval.",
+        "ℹ️".blue()
+    );
 
     Ok(())
 }

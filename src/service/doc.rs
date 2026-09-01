@@ -34,6 +34,6 @@ pub async fn get_health_detail() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(3))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "doc").await?;
     Ok(data)
 }

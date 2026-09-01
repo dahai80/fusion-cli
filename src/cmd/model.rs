@@ -21,6 +21,9 @@ async fn run_with_timeout(
     for (k, v) in envs {
         cmd.env(k, v);
     }
+    // P1-4 修复: tokio Child 默认 drop 不杀子进程。超时后孤儿进程会残留 (huggingface-cli
+    // 继续占带宽/磁盘)。kill_on_drop(true) 确保 future 被 drop 时发 SIGKILL 给子进程。
+    cmd.kill_on_drop(true);
     let child = cmd
         .spawn()
         .map_err(|e| anyhow::anyhow!("spawn {} failed: {}", program, e))?;
@@ -32,11 +35,12 @@ async fn run_with_timeout(
     {
         Ok(o) => Ok(o?),
         Err(_) => {
+            // 超时: wait_with_output future 被 drop, kill_on_drop 触发 SIGKILL。
             warn!(
                 program = program,
                 label = label,
                 timeout_secs = timeout_secs,
-                "external command timed out, killing"
+                "external command timed out, killed"
             );
             anyhow::bail!("{} timed out after {}s", label, timeout_secs)
         }

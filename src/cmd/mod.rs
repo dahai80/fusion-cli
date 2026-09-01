@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod bench;
 pub mod benchsvc;
 pub mod chat;
@@ -12,6 +13,7 @@ pub mod init;
 pub mod kb;
 pub mod log;
 pub mod memory;
+pub mod metrics;
 pub mod model;
 pub mod net;
 pub mod rag;
