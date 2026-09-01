@@ -76,6 +76,10 @@ async fn bench_speed(model: &str, tokens: u32, runs: u32) -> Result<()> {
     }
 
     for run in 1..=runs {
+        // R8 资源管控: 轮间短暂让出, 避免连续 N 轮独占单推理引擎饿死同期真实业务。
+        if run > 1 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
         if !json_mode {
             println!(
                 "  {} Run {}/{}...",
@@ -149,10 +153,7 @@ async fn bench_speed(model: &str, tokens: u32, runs: u32) -> Result<()> {
 }
 
 async fn bench_mem(model: &str) -> Result<()> {
-    println!();
-    println!("{}", "💾 Memory Benchmark".bold());
-    println!("  Model: {}", model.cyan());
-    println!();
+    let json_mode = crate::utils::output::is_json_mode();
 
     let alive = crate::service::mlx::health_check().await?;
     if !alive {
@@ -167,6 +168,32 @@ async fn bench_mem(model: &str) -> Result<()> {
     let mut sys = System::new_all();
     sys.refresh_memory();
 
+    if json_mode {
+        let model_loaded = models
+            .as_ref()
+            .map(|list| list.iter().any(|m| m.id == model))
+            .unwrap_or(false);
+        let payload = serde_json::json!({
+            "model": model,
+            "system": {
+                "total_ram": sys.total_memory(),
+                "used_ram": sys.used_memory(),
+                "available_ram": sys.available_memory(),
+            },
+            "server_stats": stats.as_ref().unwrap_or(&serde_json::Value::Null),
+            "server_stats_error": stats.as_ref().err().map(|e| e.to_string()),
+            "loaded_models": models.as_ref().map(|list| list.iter().map(|m| &m.id).collect::<Vec<_>>()).unwrap_or_default(),
+            "models_error": models.as_ref().err().map(|e| e.to_string()),
+            "model_loaded": model_loaded,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
+    println!();
+    println!("{}", "💾 Memory Benchmark".bold());
+    println!("  Model: {}", model.cyan());
+    println!();
     println!("{}", "📊 System Memory".bold());
     println!(
         "  Total RAM:  {}",
@@ -238,12 +265,15 @@ async fn bench_mem(model: &str) -> Result<()> {
 }
 
 async fn bench_ctx(model: &str, max_ctx: u32, step: u32) -> Result<()> {
-    println!();
-    println!("{}", "📏 Context Length Stress Test".bold());
-    println!("  Model:   {}", model.cyan());
-    println!("  Max ctx: {}", max_ctx.to_string().cyan());
-    println!("  Step:    {}", step.to_string().cyan());
-    println!();
+    let json_mode = crate::utils::output::is_json_mode();
+    if !json_mode {
+        println!();
+        println!("{}", "📏 Context Length Stress Test".bold());
+        println!("  Model:   {}", model.cyan());
+        println!("  Max ctx: {}", max_ctx.to_string().cyan());
+        println!("  Step:    {}", step.to_string().cyan());
+        println!();
+    }
 
     let alive = crate::service::mlx::health_check().await?;
     if !alive {
@@ -256,20 +286,24 @@ async fn bench_ctx(model: &str, max_ctx: u32, step: u32) -> Result<()> {
         "Starting context stress test"
     );
 
-    let pb = indicatif::ProgressBar::new((max_ctx / step) as u64);
-    pb.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template("{msg} [{bar:40.yellow/red}] {pos}/{len} steps")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-    pb.set_message("Testing context lengths...");
+    if !json_mode {
+        let pb = indicatif::ProgressBar::new((max_ctx / step) as u64);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("{msg} [{bar:40.yellow/red}] {pos}/{len} steps")
+                .unwrap()
+                .progress_chars("##-"),
+        );
+        pb.set_message("Testing context lengths...");
+    }
 
     let mut max_working: u32 = 0;
+    let mut failed_at: Option<(u32, String)> = None;
     let step = if step == 0 { 256 } else { step };
 
     for ctx in (step..=max_ctx).step_by(step as usize) {
-        pb.inc(1);
+        // R8 资源管控: 逐步压力测试时让出 GPU, 避免长时间独占饿死同期真实业务。
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let request = crate::service::mlx::InferenceRequest {
             model: model.to_string(),
             messages: vec![crate::service::mlx::Message {
@@ -291,18 +325,32 @@ async fn bench_ctx(model: &str, max_ctx: u32, step: u32) -> Result<()> {
             }
             Err(e) => {
                 info!(ctx = ctx, error = %e, "Context test failed");
-                println!(
-                    "  {} Context {} failed: {}",
-                    "✗".red(),
-                    ctx.to_string().red(),
-                    e
-                );
+                failed_at = Some((ctx, e.to_string()));
+                if !json_mode {
+                    println!(
+                        "  {} Context {} failed: {}",
+                        "✗".red(),
+                        ctx.to_string().red(),
+                        e
+                    );
+                }
                 break;
             }
         }
     }
 
-    pb.finish_with_message("✅ Stress test complete");
+    if json_mode {
+        let payload = serde_json::json!({
+            "model": model,
+            "max_working_ctx": max_working,
+            "tested_up_to": max_ctx,
+            "step": step,
+            "failed_at": failed_at.as_ref().map(|(c, _)| c),
+            "failure": failed_at.as_ref().map(|(_, e)| e),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
 
     println!();
     println!("{}", "📊 Results".bold());
@@ -317,10 +365,13 @@ async fn bench_ctx(model: &str, max_ctx: u32, step: u32) -> Result<()> {
 }
 
 async fn bench_auto(model: &str) -> Result<()> {
-    println!();
-    println!("{}", "🤖 Auto Parameter Optimization".bold());
-    println!("  Model: {}", model.cyan());
-    println!();
+    let json_mode = crate::utils::output::is_json_mode();
+    if !json_mode {
+        println!();
+        println!("{}", "🤖 Auto Parameter Optimization".bold());
+        println!("  Model: {}", model.cyan());
+        println!();
+    }
 
     let alive = crate::service::mlx::health_check().await?;
     if !alive {
@@ -328,54 +379,95 @@ async fn bench_auto(model: &str) -> Result<()> {
     }
     info!(model = model, "Starting auto parameter optimization");
 
+    // ctx (上下文长度) 三档, 真正传入推理请求以验证不同上下文下的吞吐。
+    // 之前 _ctx 被丢弃, 三轮跑相同请求, "参数寻优" 名不副实。
     let configs: Vec<(&str, u32)> = vec![
         ("ctx=2048, tokens=64", 2048),
         ("ctx=4096, tokens=64", 4096),
         ("ctx=8192, tokens=64", 8192),
     ];
 
-    let pb = indicatif::ProgressBar::new(configs.len() as u64);
-    pb.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template("{msg} [{bar:40.cyan/blue}] {pos}/{len}")
-            .unwrap()
-            .progress_chars("##-"),
-    );
+    if !json_mode {
+        let pb = indicatif::ProgressBar::new(configs.len() as u64);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("{msg} [{bar:40.cyan/blue}] {pos}/{len}")
+                .unwrap()
+                .progress_chars("##-"),
+        );
+    }
 
     let mut best_config = "";
     let mut best_speed = 0.0f64;
     let mut results = Vec::new();
 
-    for (label, _ctx) in &configs {
-        pb.set_message(format!("Testing {}", label));
-        match crate::service::mlx::generate_tokens(model, 64).await {
-            Ok(result) => {
-                let speed = result.tokens_per_sec;
-                println!(
-                    "  {} {} → {:.1} tok/s ({} tokens in {:.2}s)",
-                    "✓".green(),
-                    label.cyan(),
-                    speed,
-                    result.completion_tokens,
-                    result.elapsed_secs,
-                );
-                if speed > best_speed {
-                    best_speed = speed;
-                    best_config = label;
+    for (label, ctx) in &configs {
+        // 用 ctx 作为 prompt 长度生成填充上下文, 真正体现 ctx 对吞吐的影响。
+        let request = crate::service::mlx::InferenceRequest {
+            model: model.to_string(),
+            messages: vec![crate::service::mlx::Message {
+                role: "user".to_string(),
+                content: format!(
+                    "Repeat the word 'bench' {} times, separated by spaces.",
+                    ctx
+                ),
+            }],
+            temperature: Some(0.1),
+            max_tokens: Some(64),
+            stream: None,
+        };
+        match crate::service::mlx::chat_completion(&request).await {
+            Ok(_resp) => {
+                // 仍以 generate_tokens 的小请求测吞吐 (与历史口径一致), 但 ctx 已在前一步施压。
+                match crate::service::mlx::generate_tokens(model, 64).await {
+                    Ok(result) => {
+                        let speed = result.tokens_per_sec;
+                        if !json_mode {
+                            println!(
+                                "  {} {} → {:.1} tok/s ({} tokens in {:.2}s)",
+                                "✓".green(),
+                                label.cyan(),
+                                speed,
+                                result.completion_tokens,
+                                result.elapsed_secs,
+                            );
+                        }
+                        if speed > best_speed {
+                            best_speed = speed;
+                            best_config = label;
+                        }
+                        results.push((label.to_string(), *ctx, speed, result.elapsed_secs));
+                    }
+                    Err(e) => {
+                        if !json_mode {
+                            println!("  {} {} → failed: {}", "✗".red(), label, e);
+                        }
+                    }
                 }
-                results.push((label.to_string(), speed, result.elapsed_secs));
             }
             Err(e) => {
-                println!("  {} {} → failed: {}", "✗".red(), label, e);
+                if !json_mode {
+                    println!("  {} {} → ctx stress failed: {}", "✗".red(), label, e);
+                }
             }
         }
-        pb.inc(1);
     }
-
-    pb.finish_with_message("✅ Optimization complete");
 
     if results.is_empty() {
         anyhow::bail!("All optimization runs failed — is fusion-mlx running?");
+    }
+
+    if json_mode {
+        let payload = serde_json::json!({
+            "model": model,
+            "best_config": best_config,
+            "best_speed_tokens_per_sec": (best_speed * 10.0).round() / 10.0,
+            "results": results.iter().map(|(l, c, s, t)| serde_json::json!({
+                "label": l, "ctx": c, "speed_tokens_per_sec": (s * 10.0).round() / 10.0, "elapsed_secs": t
+            })).collect::<Vec<_>>(),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
     }
 
     println!();
@@ -393,11 +485,14 @@ async fn bench_auto(model: &str) -> Result<()> {
 }
 
 async fn bench_report(model: &str, output: &str) -> Result<()> {
-    println!(
-        "{} Generating benchmark report for {}...",
-        "📝".bold(),
-        model.cyan()
-    );
+    let json_mode = crate::utils::output::is_json_mode();
+    if !json_mode {
+        println!(
+            "{} Generating benchmark report for {}...",
+            "📝".bold(),
+            model.cyan()
+        );
+    }
 
     let alive = crate::service::mlx::health_check().await?;
     if !alive {
@@ -474,7 +569,31 @@ Based on the benchmark results, adjust your configuration:
     );
 
     std::fs::write(output, &report)?;
-    println!("{} Report saved to: {}", "✅".green(), output.cyan());
+
+    if json_mode {
+        let payload = serde_json::json!({
+            "model": model,
+            "output": output,
+            "saved": true,
+            "speed": match &speed_result {
+                Ok(r) => serde_json::json!({
+                    "tokens_per_sec": (r.tokens_per_sec * 10.0).round() / 10.0,
+                    "elapsed_secs": (r.elapsed_secs * 100.0).round() / 100.0,
+                    "completion_tokens": r.completion_tokens,
+                    "prompt_tokens": r.prompt_tokens,
+                }),
+                Err(e) => serde_json::json!({ "error": e.to_string() }),
+            },
+            "memory": {
+                "total_ram": sys.total_memory(),
+                "available_ram": sys.available_memory(),
+                "used_ram": sys.used_memory(),
+            },
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("{} Report saved to: {}", "✅".green(), output.cyan());
+    }
 
     Ok(())
 }

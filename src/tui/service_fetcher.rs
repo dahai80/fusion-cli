@@ -1,6 +1,13 @@
 use crate::service::health::{self, ServiceStatus};
 use crate::service::mlx;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 use sysinfo::{Components, System};
+
+// R9 修复: 之前 fetch_system_info 每次调用 System::new_all() + refresh_all(),
+// 每 2s 全量枚举系统所有进程 → 可观 CPU/IO。改为复用单一 System 实例,
+// 仅 refresh CPU usage 与 memory, 不再枚举进程列表。
+static SYS: Lazy<Mutex<System>> = Lazy::new(|| Mutex::new(System::new()));
 
 pub struct SystemInfo {
     pub cpu_usage: f32,
@@ -57,12 +64,18 @@ async fn fetch_models() -> Vec<String> {
 }
 
 fn fetch_system_info() -> SystemInfo {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
-    let cpu_usage = sys.global_cpu_usage();
-    let mem_total = sys.total_memory();
-    let mem_used = sys.used_memory();
+    // 复用全局 System 实例, 仅刷新 CPU 占用与内存, 不再 new_all() 枚举进程。
+    let (cpu_usage, mem_total, mem_used) = if let Ok(mut sys) = SYS.lock() {
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
+        (
+            sys.global_cpu_usage(),
+            sys.total_memory(),
+            sys.used_memory(),
+        )
+    } else {
+        (0.0, 0, 0)
+    };
 
     let cpu_temp = {
         let components = Components::new_with_refreshed_list();

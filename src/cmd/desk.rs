@@ -5,6 +5,8 @@ use std::str::FromStr;
 use tabled::{Table, Tabled};
 use tracing::info;
 
+use crate::utils::output::is_json_mode;
+
 #[derive(Subcommand)]
 pub enum DeskCommands {
     /// 列出所有自动化模板/流程
@@ -44,16 +46,15 @@ pub async fn handle_desk(action: DeskCommands) -> Result<()> {
 }
 
 async fn desk_list() -> Result<()> {
-    println!();
-    println!("{}", "🧹 Fusion-Desk Automation Templates".bold());
-    println!();
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!();
+        println!("{}", "🧹 Fusion-Desk Automation Templates".bold());
+        println!();
+    }
 
     let alive = crate::service::desk::health_check().await.unwrap_or(false);
     if !alive {
-        println!("  {} Fusion-Desk service is not running.", "⚠".yellow());
-        println!("  Start it with: fusion service start desk");
-        println!();
-        println!("  Available built-in templates:");
         let fallback = [
             ("desktop-sort", "Desktop", "Organize desktop files by type"),
             (
@@ -76,6 +77,19 @@ async fn desk_list() -> Result<()> {
                 description: desc.to_string(),
             })
             .collect();
+        if json_mode {
+            let payload = serde_json::json!({
+                "alive": false,
+                "templates": entries,
+                "source": "builtin-fallback",
+            });
+            println!("{}", serde_json::to_string_pretty(&payload)?);
+            return Ok(());
+        }
+        println!("  {} Fusion-Desk service is not running.", "⚠".yellow());
+        println!("  Start it with: fusion service start desk");
+        println!();
+        println!("  Available built-in templates:");
         let mut table = Table::new(&entries);
         table.with(tabled::settings::Style::modern());
         table.with(tabled::settings::Width::increase(10));
@@ -85,17 +99,26 @@ async fn desk_list() -> Result<()> {
 
     match crate::service::desk::list_templates().await {
         Ok(templates) => {
-            if templates.is_empty() {
+            let entries: Vec<DeskEntry> = templates
+                .iter()
+                .map(|t| DeskEntry {
+                    id: t.id.clone(),
+                    category: t.name.clone(),
+                    description: t.description.clone(),
+                })
+                .collect();
+            if json_mode {
+                let payload = serde_json::json!({
+                    "alive": true,
+                    "templates": entries,
+                    "source": "service",
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
+            if entries.is_empty() {
                 println!("  {} No templates available.", "ℹ️".blue());
             } else {
-                let entries: Vec<DeskEntry> = templates
-                    .iter()
-                    .map(|t| DeskEntry {
-                        id: t.id.clone(),
-                        category: t.name.clone(),
-                        description: t.description.clone(),
-                    })
-                    .collect();
                 let mut table = Table::new(&entries);
                 table.with(tabled::settings::Style::modern());
                 table.with(tabled::settings::Width::increase(10));
@@ -104,41 +127,68 @@ async fn desk_list() -> Result<()> {
         }
         Err(e) => {
             info!(error = %e, "Failed to list desk templates");
+            if json_mode {
+                let payload = serde_json::json!({
+                    "alive": true, "error": e.to_string(),
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             println!("  {} Failed to fetch templates: {}", "⚠".yellow(), e);
         }
     }
 
-    println!();
-    println!(
-        "  {} Use `fusion desk run <name>` to execute a template.",
-        "💡".yellow()
-    );
-    println!(
-        "  {} Use `fusion desk cron <name> --rule=\"0 21 * * *\"` to schedule.",
-        "💡".yellow()
-    );
+    if !json_mode {
+        println!();
+        println!(
+            "  {} Use `fusion desk run <name>` to execute a template.",
+            "💡".yellow()
+        );
+        println!(
+            "  {} Use `fusion desk cron <name> --rule=\"0 21 * * *\"` to schedule.",
+            "💡".yellow()
+        );
+    }
 
     Ok(())
 }
 
 async fn desk_run(name: &str, params: Option<String>) -> Result<()> {
-    println!("{} Running automation: {}", "🚀".bold(), name.cyan());
-    if let Some(p) = &params {
-        println!("  Params: {}", p.dimmed());
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!("{} Running automation: {}", "🚀".bold(), name.cyan());
+        if let Some(p) = &params {
+            println!("  Params: {}", p.dimmed());
+        }
+        println!();
     }
-    println!();
 
     let alive = crate::service::desk::health_check().await.unwrap_or(false);
     if !alive {
-        anyhow::bail!(
-            "Fusion-Desk service is not running. Start it with: fusion service start desk"
-        );
+        let msg = "Fusion-Desk service is not running. Start it with: fusion service start desk";
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({ "error": msg, "alive": false }))?
+            );
+            return Ok(());
+        }
+        anyhow::bail!(msg);
     }
 
     info!(template = name, params = ?params, "Running desk automation task");
 
-    match crate::service::desk::run_task(name).await {
+    match crate::service::desk::run_task(name, params.as_deref()).await {
         Ok(task_id) => {
+            if json_mode {
+                let payload = serde_json::json!({
+                    "template": name,
+                    "task_id": task_id,
+                    "submitted": true,
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             if task_id.is_empty() {
                 println!("  {} Task submitted (no task ID returned).", "✅".green());
             } else {
@@ -152,6 +202,11 @@ async fn desk_run(name: &str, params: Option<String>) -> Result<()> {
         }
         Err(e) => {
             info!(error = %e, "Desk task failed");
+            if json_mode {
+                let payload = serde_json::json!({ "error": e.to_string(), "submitted": false });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             anyhow::bail!("Failed to run desk task: {}", e);
         }
     }
@@ -160,12 +215,20 @@ async fn desk_run(name: &str, params: Option<String>) -> Result<()> {
 }
 
 async fn desk_history(limit: u32) -> Result<()> {
-    println!();
-    println!("{}", "📋 Automation Task History".bold());
-    println!();
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!();
+        println!("{}", "📋 Automation Task History".bold());
+        println!();
+    }
 
     let alive = crate::service::desk::health_check().await.unwrap_or(false);
     if !alive {
+        if json_mode {
+            let payload = serde_json::json!({ "alive": false, "history": [] });
+            println!("{}", serde_json::to_string_pretty(&payload)?);
+            return Ok(());
+        }
         println!(
             "  {} Fusion-Desk service is not running. No history available.",
             "⚠".yellow()
@@ -175,6 +238,11 @@ async fn desk_history(limit: u32) -> Result<()> {
 
     match crate::service::desk::get_history(limit).await {
         Ok(history) => {
+            if json_mode {
+                let payload = serde_json::json!({ "alive": true, "history": history, "total": history.len() });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             if history.is_empty() {
                 println!("  {} No task history found.", "ℹ️".blue());
             } else {
@@ -203,6 +271,11 @@ async fn desk_history(limit: u32) -> Result<()> {
         }
         Err(e) => {
             info!(error = %e, "Failed to fetch desk history");
+            if json_mode {
+                let payload = serde_json::json!({ "alive": true, "error": e.to_string() });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             println!("  {} Failed to fetch history: {}", "⚠".yellow(), e);
         }
     }
@@ -211,23 +284,55 @@ async fn desk_history(limit: u32) -> Result<()> {
 }
 
 async fn desk_cron(name: &str, rule: &str) -> Result<()> {
+    let json_mode = is_json_mode();
     match cron::Schedule::from_str(rule) {
         Ok(schedule) => {
+            let next_run = schedule
+                .upcoming(chrono::Local)
+                .next()
+                .map(|t| t.to_string());
+            if json_mode {
+                let payload = serde_json::json!({
+                    "task": name, "rule": rule, "valid": true,
+                    "next_run": next_run,
+                    "persisted": false,
+                    "hint": "CLI does not persist schedules; use crontab or fusion-desk service API",
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             println!(
-                "{} Scheduled task: {} → {}",
+                "{} Cron schedule for task: {} → {}",
                 "🕐".bold(),
                 name.cyan(),
                 rule.cyan()
             );
             println!("  {} Cron expression validated.", "✅".green());
-            if let Some(next) = schedule.upcoming(chrono::Local).next() {
-                println!("  Next run: {}", next.to_string().cyan());
+            if let Some(next) = &next_run {
+                println!("  Next run would be: {}", next.cyan());
             }
-            println!("  The task will run automatically at the scheduled time.");
+            println!(
+                "  {} This CLI does NOT persist or execute scheduled tasks.",
+                "⚠".yellow()
+            );
+            println!("     To actually schedule, use one of:");
+            println!(
+                "       • crontab: crontab -e  →  {} fusion desk run {} >/dev/null 2>&1",
+                rule, name
+            );
+            println!("       • fusion-desk service API (if it supports scheduling)");
         }
         Err(e) => {
+            if json_mode {
+                let payload = serde_json::json!({
+                    "task": name, "rule": rule, "valid": false, "error": e.to_string(),
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             println!("{} Invalid cron expression: {}", "❌".red(), e);
             println!("  Example: `0 21 * * *` = every day at 9 PM");
+            anyhow::bail!("invalid cron expression: {}", e);
         }
     }
 
@@ -235,29 +340,86 @@ async fn desk_cron(name: &str, rule: &str) -> Result<()> {
 }
 
 async fn desk_stop(task_id: Option<String>) -> Result<()> {
+    let json_mode = is_json_mode();
     match task_id {
         Some(id) => {
-            println!("{} Stopping task: {}", "⏹️".yellow(), id.cyan());
+            if !json_mode {
+                println!("{} Stopping task: {}", "⏹️".yellow(), id.cyan());
+            }
             let alive = crate::service::desk::health_check().await.unwrap_or(false);
             if !alive {
-                anyhow::bail!("Fusion-Desk service is not running. Cannot stop task.");
+                let msg = "Fusion-Desk service is not running. Cannot stop task.";
+                if json_mode {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(
+                            &serde_json::json!({ "task_id": id, "stopped": false, "error": msg })
+                        )?
+                    );
+                    return Ok(());
+                }
+                anyhow::bail!(msg);
             }
             match crate::service::desk::stop_task(&id).await {
-                Ok(true) => println!("  {} Task {} stopped.", "✅".green(), id.cyan()),
-                Ok(false) => println!(
-                    "  {} Task {} could not be stopped (not running?).",
-                    "⚠".yellow(),
-                    id.cyan()
-                ),
-                Err(e) => anyhow::bail!("Failed to stop task: {}", e),
+                Ok(true) => {
+                    if json_mode {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(
+                                &serde_json::json!({ "task_id": id, "stopped": true })
+                            )?
+                        );
+                    } else {
+                        println!("  {} Task {} stopped.", "✅".green(), id.cyan());
+                    }
+                }
+                Ok(false) => {
+                    if json_mode {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(
+                                &serde_json::json!({ "task_id": id, "stopped": false })
+                            )?
+                        );
+                    } else {
+                        println!(
+                            "  {} Task {} could not be stopped (not running?).",
+                            "⚠".yellow(),
+                            id.cyan()
+                        );
+                    }
+                }
+                Err(e) => {
+                    if json_mode {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(
+                                &serde_json::json!({ "task_id": id, "stopped": false, "error": e.to_string() })
+                            )?
+                        );
+                        return Ok(());
+                    }
+                    anyhow::bail!("Failed to stop task: {}", e);
+                }
             }
         }
-        None => println!("{} No running tasks to stop.", "ℹ️".blue()),
+        None => {
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "stopped": false, "error": "no task_id provided" })
+                    )?
+                );
+            } else {
+                println!("{} No running tasks to stop.", "ℹ️".blue());
+            }
+        }
     }
     Ok(())
 }
 
-#[derive(Tabled)]
+#[derive(Tabled, serde::Serialize)]
 struct DeskEntry {
     #[tabled(rename = "ID")]
     id: String,

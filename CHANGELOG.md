@@ -5,6 +5,129 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-09-01
+
+### Security
+- **`model pull` path traversal fully sealed.** HF repo id (e.g. `mlx-community/Qwen2-7B`)
+  is sanitized to a flat local name via `replace('/', "_")` *before* `validate_model_name`,
+  then a `canonicalize().starts_with(models_dir)` prefix check blocks symlink escape. The
+  download still uses the original repo id for the upstream fetch (P0-1, audit A3).
+- **`config.toml` permissions restricted to 0600** on save (chmod via
+  `PermissionsExt`), since the file holds the gateway API key (`mlx.api_key`). Write/parse
+  errors now `tracing::error!` instead of silently returning defaults (audit R10).
+
+### Fixed
+- **Agent context unbounded growth → context-window overflow.** `add_assistant_message`
+  and `add_system_message` (tool results can reach tens of KB) previously never trimmed;
+  10 tool-dense turns blew past `max_position_embeddings` → 400/413 with no fallback. Now
+  every add calls `trim()`: a message-count cap (`max_turns*2`) plus a token-budget cap
+  (75% of `mlx.default_ctx`) dropping oldest messages first (audit A5).
+- **SSE non-streaming response buffered whole body into memory.** `chat_completion`
+  aggregated by `resp.text().await` then line-parsed — long generations held the entire
+  token stream as a resident `String`, RSS climbing linearly, defeating streaming. Rewritten
+  to `resp.bytes_stream()` incremental parsing; memory = content string only (audit R1).
+- **`service start/stop` honesty.** Each start/stop function returns `bool` (true = CLI
+  managed the process, false = manual launcher needed). The `all` branch splits results
+  into `started`/`manual_required` and prints an honest summary — never claims `✅ All
+  started` when services are no-ops (audit A1, hardens v0.3.2 A1).
+- **Bench JSON purity + correctness.** `bench_mem`/`bench_ctx`/`bench_auto`/`bench_report`
+  now guard all banners with `is_json_mode()` and emit structured JSON payloads; progress
+  bars removed from the JSON path. `bench_auto` actually exercises context length via
+  `chat_completion` before `generate_tokens`. `bench_ctx` adds a 500ms settle sleep between
+  steps; `bench_speed` 1s between runs (audit R2, E12, R8).
+- **`check_url` typed retry.** `check_url_verbose` distinguishes connection-refused /
+  timeout / invalid-request / HTTP-status / other, and `check_url_with_retry` returns
+  false immediately on 4xx (no retry) with exponential backoff on transient errors
+  (audit R3/R4).
+- **TUI system-info CPU/IO churn.** `fetch_system_info` reused a single `System` instance
+  (Lazy<Mutex<System>>) calling only `refresh_cpu_usage`+`refresh_memory` — no per-tick
+  `System::new_all()`/`refresh_all()` process enumeration (audit R9).
+- **Config cache invalidation.** `ServiceUrls::from_config()` now reads an mtime-cached
+  config (reloads only on file change); `save_config` invalidates the cache after write
+  (audit A4).
+- **Env-var race before tokio workers.** `main` is now sync, sets `FUSION_OUTPUT_FORMAT` /
+  `FUSION_OFFLINE` before building the multi-thread runtime — no `set_var` after workers
+  start (audit R6).
+- **`check_named` covers all 9 services** (mlx/kb/modelhub/rag/desk/doc/memory/bench/
+  multinode) with per-service health paths and latency timing (audit E8).
+- **`extract_port` IPv6-safe** via `reqwest::Url::port()` — old `split(':').next_back()`
+  misparsed `[::1]:11434` and path-bearing URLs (audit E7).
+- **`convert_model` script-existence check** uses the convert script if present, else
+  falls back to `python3 -m mlx_lm.convert`; no silent invocation of a missing script
+  (audit E11).
+
+### Changed
+- `service::mod::check_url` delegates to `check_url_verbose().0`; the verbose variant
+  returns `(bool, String)` reason for retry logic.
+- Dead code removed: `OutputFormat` enum + `JsonPrinter` (`utils/output.rs`), `check_all`
+  (`service/health.rs`), `ContextManager::clear`. `agent::loop_engine::LoopStats` is now
+  wired into the agent loop (was scaffold) — logs `Turns/Tools/Tokens` at loop end
+  (audit E2).
+
+### Tests
+- Unit test count: 71 → 91 (+20). Added risk-path coverage the audit flagged as absent:
+  - `validate_model_name` path-traversal rejection (`../etc/passwd`, `org/../../sensitive`,
+    `..`, `.`, `/`, `\`, `.hidden`) and acceptance of safe ids (audit E1).
+  - `pull_model` safe-name derivation neutralizes `/` traversal (audit E1).
+  - `extract_port` IPv4/IPv6/path/invalid (audit E7).
+  - `ContextManager` trim by message-count, by token-budget, across assistant/system
+    messages, empty context (audit A5).
+- Gates green: `cargo fmt --all -- --check` (exit 0), `cargo clippy --all-targets --
+  -D warnings` (exit 0), `cargo test` (91 passed, 0 failed).
+
+## [0.3.2] - 2026-09-01
+
+### Security
+- **Permission system now enforced (was non-functional).** `agent::permission::confirm`
+  actually prompts and honors the tiered tool list — previously all tools auto-allowed
+  regardless of the "dangerous" classification (P0-1). Default-to-deny on prompt error.
+- **Path traversal in model delete/info/convert/quantize blocked.** `validate_model_name`
+  rejects names containing path separators/back-segments, preventing `../` escape out of
+  the models directory (P0-2).
+
+### Fixed
+- Fake service stops removed: `service stop kb/modelhub/desk/doc` now print honest
+  "manual stop required" hints instead of a false `✅` (P1-1).
+- `service log <name>` matching fixed — only tail files whose name starts with the
+  service prefix, no longer grabs unrelated logs (P1-2).
+- `desk run --params` now forwards params to the service; `desk cron` honestly reports
+  it does not persist schedules (no placebo) (P1-3).
+- `--ctx` is a documented legacy alias for `--max-tokens` (generation cap), not context
+  window size; `effective_max_tokens()` resolves both (P1-5).
+- `net` subcommand error path honors `--format=json` (P1-6).
+- `--format=json` purity extended to all remaining handlers: `model` (pull/info/delete/
+  clean/convert/quant), `desk` (list/run/history/cron/stop), `service` (start/stop/log),
+  `rag` (start/stop/status/search/list), `chat` (rejects interactive REPL in JSON mode)
+  (P2-2).
+- `--version` now driven by `env!("CARGO_PKG_VERSION")` — single source of truth (P2-3).
+- `--offline` now gates external-network commands (`model pull/convert`) via the
+  `FUSION_OFFLINE` env var, failing fast with a clear message instead of hanging on DNS
+  (P2-4).
+- Dead `service::gateway` module deleted — gateway routing already lives in
+  `ServiceUrls::mlx_api()` (P2-1).
+
+### Changed
+- Health checks now probe all 9 services **concurrently** (`futures::join_all`); worst-case
+  blocking drops from 18s to 2s (P3-1).
+- All service modules route HTTP responses through `json_or_error()`: non-2xx bodies are
+  surfaced as `"<service> HTTP <status>: <body>"` instead of opaque serde parse errors
+  (P3-2). Applied to `mlx`, `memory`, `multinode`, `desk`.
+- SSE aggregator logs malformed chunks (`info!`) instead of silently dropping them, and
+  propagates the real `finish_reason` (e.g. `"length"` on truncation) instead of a
+  hardcoded `"stop"` (P3-3, P3-7).
+- `bench_speed` tool bails on a non-integer `tokens` arg instead of silently defaulting
+  to 128 (P3-4).
+- External process calls (`huggingface-cli download`, `mlx_lm.convert`) now run with
+  timeouts (60min download / 30min convert) via `tokio::time::timeout`, preventing
+  indefinite hangs on network stall or full disk (P3-5).
+- `embed --dir` now recurses into subdirectories and enforces a 512KB total cap, bailing
+  with a clear message instead of building an unbounded payload (P3-6).
+- `memory` and `multinode` URL path segments (`id`, `node_id`, `model_name`) validated
+  against `/` and `\` to prevent path injection (P3-8).
+
+### Tests
+- Unit test count: 69 → 71 (added `aggregate_sse` finish_reason propagation + default).
+
 ## [0.3.1] - 2026-09-01
 
 ### Fixed

@@ -12,8 +12,13 @@ pub struct InferenceArgs {
     #[arg(short, long)]
     pub model: String,
 
-    #[arg(long, default_value_t = 4096)]
-    pub ctx: u32,
+    /// Maximum tokens to generate (generation length cap). --ctx is a legacy alias.
+    #[arg(long, default_value_t = 2048)]
+    pub max_tokens: u32,
+
+    /// Legacy alias for --max-tokens (generation length, NOT context window size).
+    #[arg(long)]
+    pub ctx: Option<u32>,
 
     #[arg(long, default_value_t = 0.7)]
     pub temperature: f32,
@@ -38,6 +43,13 @@ pub struct InferenceArgs {
 
     #[arg(long, default_value_t = false)]
     pub no_stream: bool,
+}
+
+impl InferenceArgs {
+    pub fn effective_max_tokens(&self) -> u32 {
+        // --ctx is a legacy alias for --max-tokens; if both given, --ctx wins (back-compat).
+        self.ctx.unwrap_or(self.max_tokens)
+    }
 }
 
 #[derive(Args, Clone)]
@@ -88,11 +100,19 @@ pub struct EmbedArgs {
 pub async fn handle_chat(args: ChatArgs) -> Result<()> {
     let model = &args.inference.model;
     let urls = ServiceUrls::from_config();
+
+    // 交互式 REPL 无法产出结构化 JSON 流，json 模式直接拒绝，避免 banner 污染。
+    if crate::utils::output::is_json_mode() {
+        anyhow::bail!(
+            "chat is an interactive REPL and does not support --format=json. Use `fusion run --format=json` for one-shot JSON output."
+        );
+    }
+
     println!(
-        "{} Starting chat with {} (ctx={}, temp={})",
+        "{} Starting chat with {} (max-tokens={}, temp={})",
         "💬".bold(),
         model.cyan(),
-        args.inference.ctx.to_string().cyan(),
+        args.inference.effective_max_tokens().to_string().cyan(),
         args.inference.temperature.to_string().cyan()
     );
     println!("{} Type your messages. Press Ctrl+C to exit.", "ℹ️".blue());
@@ -137,7 +157,7 @@ pub async fn handle_chat(args: ChatArgs) -> Result<()> {
             model: model.clone(),
             messages: conversation.clone(),
             temperature: Some(args.inference.temperature),
-            max_tokens: Some(args.inference.ctx),
+            max_tokens: Some(args.inference.effective_max_tokens()),
             stream: Some(args.inference.stream),
         };
 
@@ -276,6 +296,42 @@ pub async fn handle_code(args: CodeArgs) -> Result<()> {
     Ok(())
 }
 
+// 递归收集目录下文本文件内容, 累计不超过 max_bytes, 超出即 bail。
+fn collect_dir_text(
+    dir: &std::path::Path,
+    out: &mut String,
+    files_read: &mut u32,
+    max_bytes: usize,
+) -> Result<()> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_dir_text(&path, out, files_read, max_bytes)?;
+        } else if path.is_file() {
+            if out.len() >= max_bytes {
+                tracing::warn!(
+                    dir = %dir.display(),
+                    bytes = out.len(),
+                    cap = max_bytes,
+                    "embed --dir size cap reached, further files skipped"
+                );
+                anyhow::bail!(
+                    "embedded dir text exceeds {} byte cap ({} files read); reduce directory size or batch manually",
+                    max_bytes,
+                    files_read
+                );
+            }
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                out.push_str(&format!("\n--- {} ---\n{}", path.display(), content));
+                *files_read += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
 pub async fn handle_embed(args: EmbedArgs) -> Result<()> {
     let json_mode = crate::utils::output::is_json_mode();
 
@@ -290,18 +346,24 @@ pub async fn handle_embed(args: EmbedArgs) -> Result<()> {
     let text = if let Some(t) = &args.text {
         t.clone()
     } else if let Some(dir) = &args.dir {
+        const MAX_DIR_BYTES: usize = 512 * 1024;
+        let root = std::path::Path::new(dir);
+        if !root.is_dir() {
+            anyhow::bail!("--dir '{}' is not a directory", dir);
+        }
         let mut all_text = String::new();
-        let path = std::path::Path::new(dir);
-        if path.is_dir() {
-            for entry in std::fs::read_dir(path)? {
-                let entry = entry?;
-                let path = entry.path();
-                if path.is_file()
-                    && let Ok(content) = std::fs::read_to_string(&path)
-                {
-                    all_text.push_str(&format!("\n--- {} ---\n{}", path.display(), content));
-                }
-            }
+        let mut files_read = 0u32;
+        collect_dir_text(root, &mut all_text, &mut files_read, MAX_DIR_BYTES)?;
+        if all_text.is_empty() {
+            anyhow::bail!("--dir '{}' contained no readable text files", dir);
+        }
+        if !json_mode {
+            println!(
+                "  Read {} files ({} chars) from {}",
+                files_read,
+                all_text.len(),
+                dir.cyan()
+            );
         }
         all_text
     } else {
@@ -377,7 +439,7 @@ async fn call_fusion_mlx(model: &str, prompt: &str, args: &InferenceArgs) -> Res
         model: model.to_string(),
         messages,
         temperature: Some(args.temperature),
-        max_tokens: Some(args.ctx),
+        max_tokens: Some(args.effective_max_tokens()),
         stream: Some(args.stream),
     };
 

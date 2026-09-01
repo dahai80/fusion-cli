@@ -20,6 +20,18 @@ fn base_url() -> String {
         .to_string()
 }
 
+// 校验路径段不含 '/', 防止 id="x/../../delete" 注入额外路径段。
+fn validate_path_segment(field: &str, value: &str) -> Result<()> {
+    if value.contains('/') || value.contains('\\') {
+        anyhow::bail!(
+            "invalid {}: must not contain path separators: '{}'",
+            field,
+            value
+        );
+    }
+    Ok(())
+}
+
 fn auth_header() -> Option<(&'static str, String)> {
     let key = ServiceUrls::from_config().memory_api_key.clone();
     if key.is_empty() {
@@ -76,7 +88,7 @@ pub async fn version() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "memory").await?;
     Ok(data)
 }
 
@@ -90,7 +102,7 @@ pub async fn retrieve(query: &str, top_k: usize) -> Result<serde_json::Value> {
         "top_k": top_k,
     });
     let resp = post_with_auth(&client, &url, &payload, 30).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "memory retrieve").await?;
     Ok(data)
 }
 
@@ -101,17 +113,18 @@ pub async fn count() -> Result<serde_json::Value> {
     info!(url = %url, "fm-server count");
     let payload = serde_json::json!({});
     let resp = post_with_auth(&client, &url, &payload, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "memory").await?;
     Ok(data)
 }
 
 // get_memory: 按 id 取单条记忆。
 pub async fn get_memory(id: &str) -> Result<serde_json::Value> {
+    validate_path_segment("id", id)?;
     let client = get_client();
     let url = format!("{}/v1/memory/{}", base_url(), id);
     info!(url = %url, id = %id, "fm-server get_memory");
     let resp = get_with_auth(&client, &url, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "memory").await?;
     Ok(data)
 }
 
@@ -126,7 +139,7 @@ pub async fn commit(content: &str, scope: Option<&str>) -> Result<serde_json::Va
         serde_json::json!({ "content": content })
     };
     let resp = post_with_auth(&client, &url, &payload, 30).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "memory").await?;
     Ok(data)
 }
 
@@ -137,7 +150,7 @@ pub async fn consolidate() -> Result<serde_json::Value> {
     info!(url = %url, "fm-server consolidate");
     let payload = serde_json::json!({});
     let resp = post_with_auth(&client, &url, &payload, 60).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "memory").await?;
     Ok(data)
 }
 
@@ -148,7 +161,7 @@ pub async fn delete(id: &str) -> Result<serde_json::Value> {
     info!(url = %url, id = %id, "fm-server delete");
     let payload = serde_json::json!({ "id": id, "confirm": true });
     let resp = post_with_auth(&client, &url, &payload, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "memory").await?;
     Ok(data)
 }
 
@@ -159,7 +172,7 @@ pub async fn audit() -> Result<serde_json::Value> {
     info!(url = %url, "fm-server audit");
     let payload = serde_json::json!({});
     let resp = post_with_auth(&client, &url, &payload, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "memory").await?;
     Ok(data)
 }
 

@@ -2,9 +2,11 @@ use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
 use tabled::{Table, Tabled, settings::Style};
+use tracing::info;
 
 use crate::service::get_client;
 use crate::service::rag as rag_svc;
+use crate::utils::output::is_json_mode;
 
 const RAG_DEFAULT_PORT: u16 = 11436;
 
@@ -40,7 +42,10 @@ pub async fn handle_rag(action: RagCommands) -> Result<()> {
 }
 
 async fn rag_start(port: u16) -> Result<()> {
-    println!("{} Starting fusion-rag service...", "🚀".bold());
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!("{} Starting fusion-rag service...", "🚀".bold());
+    }
 
     let client = get_client();
     let health_url = format!("http://localhost:{}/health", port);
@@ -51,11 +56,20 @@ async fn rag_start(port: u16) -> Result<()> {
         .await
     {
         Ok(resp) if resp.status().is_success() => {
-            println!(
-                "  {} fusion-rag already running on port {}",
-                "⚠️".yellow(),
-                port
-            );
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "action": "start", "port": port, "status": "already-running"
+                    }))?
+                );
+            } else {
+                println!(
+                    "  {} fusion-rag already running on port {}",
+                    "⚠️".yellow(),
+                    port
+                );
+            }
             return Ok(());
         }
         _ => {}
@@ -64,6 +78,18 @@ async fn rag_start(port: u16) -> Result<()> {
     let home = dirs::home_dir().unwrap_or_default();
     let rag_bin = home.join(".fusion").join("bin").join("fusion-rag");
     if !rag_bin.exists() {
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "action": "start", "port": port, "status": "error",
+                    "error": "fusion-rag binary not found",
+                    "binary": rag_bin.display().to_string(),
+                    "hint": "install with: fusion service start rag",
+                }))?
+            );
+            return Ok(());
+        }
         println!(
             "  {} fusion-rag binary not found at {}",
             "❌".red(),
@@ -89,6 +115,7 @@ async fn rag_start(port: u16) -> Result<()> {
 
     let pid = child.id();
     std::fs::write(&pid_file, pid.to_string())?;
+    info!(port = port, pid = pid, "Spawned fusion-rag process");
 
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
@@ -99,20 +126,39 @@ async fn rag_start(port: u16) -> Result<()> {
         .await
     {
         Ok(resp) if resp.status().is_success() => {
-            println!(
-                "  {} fusion-rag started on port {} (PID {})",
-                "✅".green(),
-                port,
-                pid
-            );
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "action": "start", "port": port, "pid": pid, "status": "started"
+                    }))?
+                );
+            } else {
+                println!(
+                    "  {} fusion-rag started on port {} (PID {})",
+                    "✅".green(),
+                    port,
+                    pid
+                );
+            }
         }
         _ => {
-            println!(
-                "  {} fusion-rag process started (PID {}) but health check pending",
-                "⏳".yellow(),
-                pid
-            );
-            println!("     Check status: fusion rag status");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "action": "start", "port": port, "pid": pid, "status": "pending",
+                        "hint": "health check pending, run: fusion rag status"
+                    }))?
+                );
+            } else {
+                println!(
+                    "  {} fusion-rag process started (PID {}) but health check pending",
+                    "⏳".yellow(),
+                    pid
+                );
+                println!("     Check status: fusion rag status");
+            }
         }
     }
 
@@ -120,7 +166,10 @@ async fn rag_start(port: u16) -> Result<()> {
 }
 
 async fn rag_stop() -> Result<()> {
-    println!("{} Stopping fusion-rag service...", "⏹️".bold());
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!("{} Stopping fusion-rag service...", "⏹️".bold());
+    }
 
     let home = dirs::home_dir().unwrap_or_default();
     let pid_file = home.join(".fusion").join("run").join("fusion-rag.pid");
@@ -133,32 +182,79 @@ async fn rag_stop() -> Result<()> {
 
             match output {
                 Ok(o) if o.status.success() => {
-                    println!("  {} fusion-rag stopped (PID {})", "✅".green(), pid);
+                    if json_mode {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "action": "stop", "pid": pid, "stopped": true
+                            }))?
+                        );
+                    } else {
+                        println!("  {} fusion-rag stopped (PID {})", "✅".green(), pid);
+                    }
                     let _ = std::fs::remove_file(&pid_file);
                 }
                 _ => {
-                    println!(
-                        "  {} Process {} not found (may have already exited)",
-                        "⚠️".yellow(),
-                        pid
-                    );
+                    if json_mode {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "action": "stop", "pid": pid, "stopped": false,
+                                "warning": "process not found (already exited?)"
+                            }))?
+                        );
+                    } else {
+                        println!(
+                            "  {} Process {} not found (may have already exited)",
+                            "⚠️".yellow(),
+                            pid
+                        );
+                    }
                     let _ = std::fs::remove_file(&pid_file);
                 }
             }
+        } else if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "action": "stop", "stopped": false, "error": "invalid PID in pid file"
+                }))?
+            );
         } else {
             println!("  {} Invalid PID in {}", "❌".red(), pid_file.display());
         }
     } else {
         match rag_svc::health_check().await {
             Ok(true) => {
-                println!(
-                    "  {} Service is running but no PID file found",
-                    "⚠️".yellow()
-                );
-                println!("     Try: pkill -f fusion-rag");
+                if json_mode {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "action": "stop", "stopped": false,
+                            "running": true,
+                            "warning": "service running but no PID file",
+                            "hint": "try: pkill -f fusion-rag"
+                        }))?
+                    );
+                } else {
+                    println!(
+                        "  {} Service is running but no PID file found",
+                        "⚠️".yellow()
+                    );
+                    println!("     Try: pkill -f fusion-rag");
+                }
             }
             _ => {
-                println!("  {} fusion-rag is not running", "ℹ️".blue());
+                if json_mode {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "action": "stop", "stopped": false, "running": false
+                        }))?
+                    );
+                } else {
+                    println!("  {} fusion-rag is not running", "ℹ️".blue());
+                }
             }
         }
     }
@@ -167,11 +263,14 @@ async fn rag_stop() -> Result<()> {
 }
 
 async fn rag_status() -> Result<()> {
-    println!();
-    println!("{}", "🔍 Fusion-RAG Service Status".bold());
-    println!();
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!();
+        println!("{}", "🔍 Fusion-RAG Service Status".bold());
+        println!();
+    }
 
-    let (status, version, uptime) = match rag_svc::get_health_detail().await {
+    let (status, version, uptime, health_data) = match rag_svc::get_health_detail().await {
         Ok(data) => {
             let v = data
                 .get("version")
@@ -183,14 +282,41 @@ async fn rag_status() -> Result<()> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("-")
                 .to_string();
-            ("✅ running".green().to_string(), v, u)
+            ("✅ running".green().to_string(), v, u, Some(data))
         }
         Err(_) => (
             "⬜ stopped".yellow().to_string(),
             "-".to_string(),
             "-".to_string(),
+            None,
         ),
     };
+
+    let embedding_status = match rag_svc::list_embedding_models().await {
+        Ok(data) => {
+            if json_mode {
+                data
+            } else if let Some(models) = data.get("models").and_then(|v| v.as_array()) {
+                serde_json::json!(format!("{} model(s) available", models.len()))
+            } else {
+                serde_json::json!("available")
+            }
+        }
+        Err(_) => serde_json::json!("unavailable"),
+    };
+
+    if json_mode {
+        let payload = serde_json::json!({
+            "running": health_data.is_some(),
+            "port": RAG_DEFAULT_PORT,
+            "version": version,
+            "uptime": uptime,
+            "health": health_data,
+            "embedding_models": embedding_status,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
 
     let mut entries = vec![
         StatusEntry {
@@ -211,20 +337,13 @@ async fn rag_status() -> Result<()> {
         },
     ];
 
-    let embedding_status = match rag_svc::list_embedding_models().await {
-        Ok(data) => {
-            if let Some(models) = data.get("models").and_then(|v| v.as_array()) {
-                format!("{} model(s) available", models.len())
-            } else {
-                "available".to_string()
-            }
-        }
-        Err(_) => "unavailable".to_string(),
+    let emb_text = match embedding_status.as_str() {
+        Some(s) => s.to_string(),
+        None => "available".to_string(),
     };
-
     entries.push(StatusEntry {
         key: "Embedding".to_string(),
-        value: embedding_status.cyan().to_string(),
+        value: emb_text.cyan().to_string(),
     });
 
     let mut table = Table::new(&entries);
@@ -236,12 +355,22 @@ async fn rag_status() -> Result<()> {
 }
 
 async fn rag_search(kb_id: String, query: String, top_k: usize) -> Result<()> {
-    println!("{} Searching in '{}'...", "🔍".bold(), kb_id.cyan());
-    println!("  Query: {}", query.dimmed());
-    println!();
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!("{} Searching in '{}'...", "🔍".bold(), kb_id.cyan());
+        println!("  Query: {}", query.dimmed());
+        println!();
+    }
 
     match rag_svc::search(&kb_id, &query, top_k).await {
         Ok(data) => {
+            if json_mode {
+                let payload = serde_json::json!({
+                    "kb_id": kb_id, "query": query, "top_k": top_k, "result": data,
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             if let Some(results) = data.get("results").and_then(|v| v.as_array()) {
                 if results.is_empty() {
                     println!("  {} No results found.", "ℹ️".blue());
@@ -280,6 +409,14 @@ async fn rag_search(kb_id: String, query: String, top_k: usize) -> Result<()> {
             }
         }
         Err(e) => {
+            if json_mode {
+                let payload = serde_json::json!({
+                    "kb_id": kb_id, "query": query, "error": e.to_string(),
+                    "hint": "is fusion-rag running? start with: fusion rag start",
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             println!(
                 "  {} fusion-rag not available: {} (is it running?)",
                 "⬜".yellow(),
@@ -293,9 +430,12 @@ async fn rag_search(kb_id: String, query: String, top_k: usize) -> Result<()> {
 }
 
 async fn rag_list() -> Result<()> {
-    println!();
-    println!("{}", "📚 Fusion-RAG Knowledge Bases".bold());
-    println!();
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!();
+        println!("{}", "📚 Fusion-RAG Knowledge Bases".bold());
+        println!();
+    }
 
     match rag_svc::list_knowledge_bases().await {
         Ok(data) => {
@@ -306,6 +446,12 @@ async fn rag_list() -> Result<()> {
             } else {
                 vec![]
             };
+
+            if json_mode {
+                let payload = serde_json::json!({ "bases": bases, "total": bases.len() });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
 
             if bases.is_empty() {
                 println!("  {} No knowledge bases found.", "ℹ️".blue());
@@ -344,6 +490,11 @@ async fn rag_list() -> Result<()> {
             }
         }
         Err(e) => {
+            if json_mode {
+                let payload = serde_json::json!({ "bases": [], "error": e.to_string(), "hint": "start with: fusion rag start" });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+                return Ok(());
+            }
             println!(
                 "  {} fusion-rag not available: {} (is it running?)",
                 "⬜".yellow(),

@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.3.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
 </p>
 
 ---
@@ -440,6 +440,21 @@ fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*`
 - [x] `fusion cluster`/`fusion sync` 重写，直连 multi-node Master（11452），不再误连网关
 - [x] 健康检查新增 Memory/Bench/MultiNode 探测
 - [x] 配置段 `[memory]`/`[bench]`/`[multinode]`
+
+### V0.3.3 — 安全与可靠性加固 ✅
+- [x] `model pull` 路径穿越封死（repo-id 清洗 + canonicalize 前缀校验）
+- [x] `config.toml` 权限收紧为 0600（内含网关 API key）
+- [x] Agent 上下文对所有消息类型裁剪（token 预算上限，防窗口溢出）
+- [x] SSE 非流式响应增量解析（不再整流缓冲，RSS 受控）
+- [x] `service start/stop` 诚实区分 已启动/需人工
+- [x] Bench JSON 纯净化 + `bench_auto` 真实上下文长度压测
+- [x] 类型化 `check_url` 重试（4xx 不重试，瞬时错误指数退避）
+- [x] TUI 系统信息复用单一 `System` 实例（不再每 tick 全量进程枚举）
+- [x] 配置 mtime 缓存 + 保存即失效
+- [x] 环境变量在 tokio runtime 前设置（无 `set_var` 竞态）
+- [x] `check_named` 覆盖全部 9 服务；IPv6 安全的 `extract_port`
+- [x] 清理死代码（`OutputFormat`、`check_all`、`ContextManager::clear`）；`LoopStats` 接入主循环
+- [x] 测试数 71 → 91（风险路径覆盖：路径穿越、IPv6 端口、上下文裁剪）
 
 ### V0.4（未来）
 - [ ] 分布式节点管理

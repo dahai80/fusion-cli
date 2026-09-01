@@ -20,6 +20,18 @@ fn base_url() -> String {
         .to_string()
 }
 
+// 校验路径段不含 '/', 防止 node_id="x/../delete" 注入额外路径段。
+fn validate_path_segment(field: &str, value: &str) -> Result<()> {
+    if value.contains('/') || value.contains('\\') {
+        anyhow::bail!(
+            "invalid {}: must not contain path separators: '{}'",
+            field,
+            value
+        );
+    }
+    Ok(())
+}
+
 fn auth_header() -> Option<(&'static str, String)> {
     let key = ServiceUrls::from_config().multinode_api_key.clone();
     if key.is_empty() {
@@ -86,7 +98,7 @@ pub async fn get_health_detail() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
@@ -95,7 +107,7 @@ pub async fn cluster_status() -> Result<serde_json::Value> {
     let url = format!("{}/api/cluster/status", base_url());
     info!(url = %url, "multi-node cluster status");
     let resp = authed_get(&client, &url, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
@@ -104,25 +116,27 @@ pub async fn list_nodes() -> Result<serde_json::Value> {
     let url = format!("{}/api/nodes", base_url());
     info!(url = %url, "multi-node list nodes");
     let resp = authed_get(&client, &url, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
 pub async fn get_node(node_id: &str) -> Result<serde_json::Value> {
+    validate_path_segment("node_id", node_id)?;
     let client = get_client();
     let url = format!("{}/api/nodes/{}", base_url(), node_id);
     info!(url = %url, node_id = %node_id, "multi-node get node");
     let resp = authed_get(&client, &url, 5).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
 pub async fn remove_node(node_id: &str) -> Result<serde_json::Value> {
+    validate_path_segment("node_id", node_id)?;
     let client = get_client();
     let url = format!("{}/api/nodes/{}", base_url(), node_id);
     info!(url = %url, node_id = %node_id, "multi-node remove node");
     let resp = authed_delete(&client, &url, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
@@ -131,7 +145,7 @@ pub async fn pending_nodes() -> Result<serde_json::Value> {
     let url = format!("{}/api/nodes/pending", base_url());
     info!(url = %url, "multi-node pending nodes");
     let resp = authed_get(&client, &url, 5).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
@@ -144,7 +158,7 @@ pub async fn approve_node(node_id: &str, approved_by: &str) -> Result<serde_json
         "approved_by": approved_by,
     });
     let resp = authed_post(&client, &url, &payload, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
@@ -157,7 +171,7 @@ pub async fn reject_node(node_id: &str, reason: &str) -> Result<serde_json::Valu
         "reason": reason,
     });
     let resp = authed_post(&client, &url, &payload, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
@@ -166,16 +180,17 @@ pub async fn routing_summary() -> Result<serde_json::Value> {
     let url = format!("{}/api/routing/summary", base_url());
     info!(url = %url, "multi-node routing summary");
     let resp = authed_get(&client, &url, 5).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
 pub async fn model_manifest(model_name: &str) -> Result<serde_json::Value> {
+    validate_path_segment("model_name", model_name)?;
     let client = get_client();
     let url = format!("{}/api/models/{}/manifest", base_url(), model_name);
     info!(url = %url, model = %model_name, "multi-node model manifest");
     let resp = authed_get(&client, &url, 10).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 
@@ -190,7 +205,7 @@ pub async fn sync_incremental(source: &str, model_name: &str) -> Result<serde_js
         "source": source,
     });
     let resp = authed_post(&client, &url, &payload, 60).send().await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "multinode").await?;
     Ok(data)
 }
 

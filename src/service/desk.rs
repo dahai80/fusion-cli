@@ -20,7 +20,7 @@ pub struct DeskTemplate {
     pub description: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, serde::Serialize)]
 pub struct DeskHistoryEntry {
     pub id: String,
     pub task: String,
@@ -44,20 +44,26 @@ pub async fn list_templates() -> Result<Vec<DeskTemplate>> {
     Ok(data)
 }
 
-pub async fn run_task(template: &str) -> Result<String> {
+pub async fn run_task(template: &str, params: Option<&str>) -> Result<String> {
     let client = get_client();
     let url = format!("{}/api/tasks/run", base_url());
-    info!(url = %url, template = %template, "Running desk task");
-    let payload = serde_json::json!({
+    info!(url = %url, template = %template, params = ?params, "Running desk task");
+    let mut payload = serde_json::json!({
         "template": template,
     });
+    if let Some(p) = params
+        && !p.is_empty()
+    {
+        // params may be a JSON object string or plain string; send as-is for the service to parse.
+        payload["params"] = serde_json::Value::String(p.to_string());
+    }
     let resp = client
         .post(&url)
         .json(&payload)
         .timeout(Duration::from_secs(60))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "desk run_task").await?;
     Ok(data["task_id"].as_str().unwrap_or("").to_string())
 }
 

@@ -38,20 +38,37 @@ pub async fn handle_net(action: NetCommands) -> Result<()> {
 
 // 统一 daemon-down 处理: 打印提示 + exit 3。
 fn handle_sv_error(e: sv_svc::SvError) -> Result<()> {
-    if sv_svc::is_daemon_down(&e) {
+    let daemon_down = sv_svc::is_daemon_down(&e);
+    let code = if daemon_down {
+        EXIT_DAEMON_DOWN
+    } else {
+        EXIT_RPC_ERROR
+    };
+    if is_json_mode() {
+        let payload = serde_json::json!({
+            "error": e.to_string(),
+            "daemon_down": daemon_down,
+            "code": code,
+            "socket": "/tmp/fusion-sv.sock",
+            "hint": "override with FUSION_SV_SOCKET; start with: fusion-sv daemon",
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
         println!("  {} {}", "❌".red(), e);
-        println!("     Socket: /tmp/fusion-sv.sock (override with FUSION_SV_SOCKET)");
-        println!("     启动: fusion-sv daemon");
-        std::process::exit(EXIT_DAEMON_DOWN);
+        if daemon_down {
+            println!("     Socket: /tmp/fusion-sv.sock (override with FUSION_SV_SOCKET)");
+            println!("     启动: fusion-sv daemon");
+        }
     }
-    println!("  {} {}", "❌".red(), e);
-    std::process::exit(EXIT_RPC_ERROR);
+    std::process::exit(code);
 }
 
 async fn net_ping() -> Result<()> {
-    println!();
-    println!("{}", "🏓 Fusion-Supervisor Ping".bold());
-    println!();
+    if !is_json_mode() {
+        println!();
+        println!("{}", "🏓 Fusion-Supervisor Ping".bold());
+        println!();
+    }
     match sv_svc::ping() {
         Ok(alive) => {
             if is_json_mode() {
@@ -69,14 +86,15 @@ async fn net_ping() -> Result<()> {
 }
 
 async fn net_status() -> Result<()> {
-    println!();
-    println!("{}", "📊 Fusion-Supervisor Status".bold());
-    println!();
+    if !is_json_mode() {
+        println!();
+        println!("{}", "📊 Fusion-Supervisor Status".bold());
+        println!();
+    }
     match sv_svc::status() {
         Ok(entries) => {
             if is_json_mode() {
                 println!("{}", serde_json::to_string_pretty(&entries)?);
-                println!();
                 return Ok(());
             }
             print_status_table(&entries);
