@@ -11,6 +11,7 @@ pub mod init;
 pub mod kb;
 pub mod log;
 pub mod model;
+pub mod net;
 pub mod rag;
 pub mod service;
 pub mod sync;

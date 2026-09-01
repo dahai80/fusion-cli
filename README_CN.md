@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.7-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.8-blue" alt="Version">
 </p>
 
 ---
@@ -249,6 +249,18 @@ fusion completions zsh
 | `rules` | 列出当前 guard 规则集 + epoch |
 | `audit [--limit=20]` | 查看最近的审计事件 |
 
+### 服务编排（`fusion net`）
+
+经 UDS（JSON-RPC 2.0，socket `/tmp/fusion-sv.sock`，可用 `FUSION_SV_SOCKET` 覆盖）转发至 fusion-supervisor 守护进程。可选 token 鉴权经 `FUSION_SV_TOKEN`（注入 `params.token`）。守护进程未运行时退出码 3，提示 `fusion-sv daemon`。
+
+| 命令 | 说明 |
+|------|------|
+| `up` | 启动所有受管服务 |
+| `down` | 停止所有受管服务 |
+| `status` | 列出所有服务状态 + 端口 |
+| `restart <service>` | 重启指定服务 |
+| `ping` | 探活 supervisor 守护进程 |
+
 ---
 
 ## 🔧 架构
@@ -274,6 +286,7 @@ src/
 │   ├── desk.rs          # fusion desk（真实 API 调用）
 │   ├── sync.rs          # fusion sync（模型同步）
 │   ├── guard.rs         # fusion guard（UDS JSON-RPC status/rules/audit）
+│   ├── net.rs           # fusion net（转发 fusion-supervisor UDS）
 │   └── cluster.rs       # fusion cluster
 ├── service/             # 统一服务层
 │   ├── mod.rs           # 全局 reqwest::Client + ServiceUrls + check_url()
@@ -285,6 +298,7 @@ src/
 │   ├── doc.rs           # Fusion-Doc 客户端（health check, status detail）
 │   ├── gateway.rs       # Gateway 客户端（服务发现）（V0.2.1）
 │   ├── guard.rs         # Guard UDS 客户端（JSON-RPC ping, rule.list, audit.list）
+│   ├── sv.rs            # Supervisor UDS 客户端（JSON-RPC ping/status/up/down/restart）
 │   └── health.rs        # 统一健康检查（check_all, check_all_with_latency）
 ├── tui/                 # TUI 仪表盘（V0.2.1）
 │   ├── mod.rs           # 事件循环 + 终端设置
