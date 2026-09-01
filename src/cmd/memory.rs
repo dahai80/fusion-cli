@@ -66,10 +66,6 @@ pub async fn handle_memory(action: MemoryCommands) -> Result<()> {
 }
 
 async fn memory_status() -> Result<()> {
-    println!();
-    println!("{}", "🧠 Fusion-Memory Service Status".bold());
-    println!();
-
     let alive = mem::health_check().await.unwrap_or(false);
 
     if output::is_json_mode() {
@@ -81,6 +77,10 @@ async fn memory_status() -> Result<()> {
         output::print_json(&payload)?;
         return Ok(());
     }
+
+    println!();
+    println!("{}", "🧠 Fusion-Memory Service Status".bold());
+    println!();
 
     let status = if alive {
         "✅ running".green().to_string()
@@ -148,9 +148,11 @@ async fn memory_version() -> Result<()> {
 }
 
 async fn memory_search(query: String, top_k: usize) -> Result<()> {
-    println!("{} Searching memory...", "🔍".bold());
-    println!("  Query: {}", query.dimmed());
-    println!();
+    if !output::is_json_mode() {
+        println!("{} Searching memory...", "🔍".bold());
+        println!("  Query: {}", query.dimmed());
+        println!();
+    }
 
     match mem::retrieve(&query, top_k).await {
         Ok(data) => {
@@ -232,8 +234,10 @@ async fn memory_count() -> Result<()> {
 }
 
 async fn memory_get(id: String) -> Result<()> {
-    println!("{} Memory {}", "🔍".bold(), id.cyan());
-    println!();
+    if !output::is_json_mode() {
+        println!("{} Memory {}", "🔍".bold(), id.cyan());
+        println!();
+    }
     match mem::get_memory(&id).await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -255,7 +259,9 @@ async fn memory_get(id: String) -> Result<()> {
 }
 
 async fn memory_commit(content: String, scope: Option<String>) -> Result<()> {
-    println!("{} Committing memory...", "📝".bold());
+    if !output::is_json_mode() {
+        println!("{} Committing memory...", "📝".bold());
+    }
     match mem::commit(&content, scope.as_deref()).await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -278,7 +284,9 @@ async fn memory_commit(content: String, scope: Option<String>) -> Result<()> {
 }
 
 async fn memory_consolidate() -> Result<()> {
-    println!("{} Consolidating memories (short→long)...", "🔄".bold());
+    if !output::is_json_mode() {
+        println!("{} Consolidating memories (short→long)...", "🔄".bold());
+    }
     match mem::consolidate().await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -301,7 +309,9 @@ async fn memory_consolidate() -> Result<()> {
 }
 
 async fn memory_delete(id: String) -> Result<()> {
-    println!("{} Deleting memory {}...", "🗑️".bold(), id.cyan());
+    if !output::is_json_mode() {
+        println!("{} Deleting memory {}...", "🗑️".bold(), id.cyan());
+    }
     match mem::delete(&id).await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -320,9 +330,11 @@ async fn memory_delete(id: String) -> Result<()> {
 }
 
 async fn memory_audit() -> Result<()> {
-    println!();
-    println!("{}", "📋 Memory Audit Log".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "📋 Memory Audit Log".bold());
+        println!();
+    }
     match mem::audit().await {
         Ok(data) => {
             if output::is_json_mode() {

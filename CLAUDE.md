@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build --release          # Binary: target/release/fusion
 cargo run -- <subcommand>      # Run in dev mode
-cargo test                     # 63 unit tests across 9 files
+cargo test                     # 69 unit tests across 9 files
 cargo check --all-targets      # Type-check incl. tests/benches
 cargo fmt --all -- --check     # Format check (CI enforces)
 cargo clippy --all-targets -- -D warnings   # Lint, warnings = errors (CI enforces)

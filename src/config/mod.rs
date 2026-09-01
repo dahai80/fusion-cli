@@ -107,6 +107,8 @@ pub struct BenchConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MultinodeConfig {
     pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -161,6 +163,7 @@ impl Default for FusionConfig {
             },
             multinode: MultinodeConfig {
                 base_url: "http://localhost:11452".to_string(),
+                api_key: String::new(),
             },
             log: LogConfig {
                 level: "info".to_string(),
@@ -222,7 +225,9 @@ fn list_config() -> Result<()> {
         "    mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size,"
     );
     println!("    modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, log.level,");
-    println!("    memory.base-url, memory.api-key, bench.base-url, multinode.base-url");
+    println!(
+        "    memory.base-url, memory.api-key, bench.base-url, multinode.base-url, multinode.api-key"
+    );
     Ok(())
 }
 
@@ -246,11 +251,12 @@ fn get_config(key: String) -> Result<()> {
         "memory.api-key" => config.memory.api_key.clone(),
         "bench.base-url" => config.bench.base_url.clone(),
         "multinode.base-url" => config.multinode.base_url.clone(),
+        "multinode.api-key" => config.multinode.api_key.clone(),
         "log.level" => config.log.level.clone(),
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
             println!(
-                "  Available keys: model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, memory.base-url, memory.api-key, bench.base-url, multinode.base-url, log.level"
+                "  Available keys: model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, memory.base-url, memory.api-key, bench.base-url, multinode.base-url, multinode.api-key, log.level"
             );
             return Ok(());
         }
@@ -291,6 +297,7 @@ async fn set_config(key: String, value: String) -> Result<()> {
         "memory.api-key" => config.memory.api_key = value.clone(),
         "bench.base-url" => config.bench.base_url = value.clone(),
         "multinode.base-url" => config.multinode.base_url = value.clone(),
+        "multinode.api-key" => config.multinode.api_key = value.clone(),
         "log.level" => config.log.level = value.clone(),
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
@@ -366,6 +373,14 @@ mod tests {
         // fm-server B5: 未配 key 则 HTTP 拒启, 故 CLI 默认空 (auth_header → None, 仅用公开端点)。
         let config = FusionConfig::default();
         assert_eq!(config.memory.api_key, "");
+    }
+
+    #[test]
+    fn test_default_multinode_api_key_empty() {
+        // Master BearerAuthMiddleware: 除 /api/health* 外强制 token。CLI 默认空 → 仅 health 可用;
+        // 配 `fusion config set multinode.api-key <FUSION_CLUSTER_TOKEN>` 后解锁 cluster/sync。
+        let config = FusionConfig::default();
+        assert_eq!(config.multinode.api_key, "");
     }
 
     #[test]

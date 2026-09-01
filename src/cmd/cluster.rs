@@ -54,9 +54,11 @@ pub async fn handle_cluster(action: ClusterCommands) -> Result<()> {
 }
 
 async fn cluster_status() -> Result<()> {
-    println!();
-    println!("{}", "🌐 Cluster Status (multi-node Master)".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "🌐 Cluster Status (multi-node Master)".bold());
+        println!();
+    }
 
     match mn::cluster_status().await {
         Ok(data) => {
@@ -85,9 +87,11 @@ async fn cluster_status() -> Result<()> {
 }
 
 async fn cluster_nodes() -> Result<()> {
-    println!();
-    println!("{}", "🖥️  Cluster Nodes (multi-node Master)".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "🖥️  Cluster Nodes (multi-node Master)".bold());
+        println!();
+    }
 
     match mn::list_nodes().await {
         Ok(data) => {
@@ -148,9 +152,11 @@ async fn cluster_nodes() -> Result<()> {
 }
 
 async fn cluster_node(node_id: String) -> Result<()> {
-    println!();
-    println!("{} {}", "🔍 Node Detail".bold(), node_id.cyan());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{} {}", "🔍 Node Detail".bold(), node_id.cyan());
+        println!();
+    }
 
     match mn::get_node(&node_id).await {
         Ok(data) => {
@@ -174,7 +180,9 @@ async fn cluster_node(node_id: String) -> Result<()> {
 }
 
 async fn cluster_remove(node_id: String) -> Result<()> {
-    println!("{} Removing node {}...", "⏹️".bold(), node_id.cyan());
+    if !output::is_json_mode() {
+        println!("{} Removing node {}...", "⏹️".bold(), node_id.cyan());
+    }
 
     match mn::remove_node(&node_id).await {
         Ok(data) => {
@@ -195,9 +203,11 @@ async fn cluster_remove(node_id: String) -> Result<()> {
 }
 
 async fn cluster_pending() -> Result<()> {
-    println!();
-    println!("{}", "⏳ Pending Nodes (awaiting approval)".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "⏳ Pending Nodes (awaiting approval)".bold());
+        println!();
+    }
 
     match mn::pending_nodes().await {
         Ok(data) => {
@@ -242,12 +252,14 @@ async fn cluster_pending() -> Result<()> {
 }
 
 async fn cluster_approve(node_id: String, approved_by: String) -> Result<()> {
-    println!(
-        "{} Approving node {} (by {})...",
-        "✅".bold(),
-        node_id.cyan(),
-        approved_by.cyan()
-    );
+    if !output::is_json_mode() {
+        println!(
+            "{} Approving node {} (by {})...",
+            "✅".bold(),
+            node_id.cyan(),
+            approved_by.cyan()
+        );
+    }
 
     match mn::approve_node(&node_id, &approved_by).await {
         Ok(data) => {
@@ -268,12 +280,14 @@ async fn cluster_approve(node_id: String, approved_by: String) -> Result<()> {
 }
 
 async fn cluster_reject(node_id: String, reason: String) -> Result<()> {
-    println!(
-        "{} Rejecting node {} (reason: {})...",
-        "⚠️".bold(),
-        node_id.cyan(),
-        reason.cyan()
-    );
+    if !output::is_json_mode() {
+        println!(
+            "{} Rejecting node {} (reason: {})...",
+            "⚠️".bold(),
+            node_id.cyan(),
+            reason.cyan()
+        );
+    }
 
     match mn::reject_node(&node_id, &reason).await {
         Ok(data) => {
@@ -294,9 +308,11 @@ async fn cluster_reject(node_id: String, reason: String) -> Result<()> {
 }
 
 async fn cluster_routing() -> Result<()> {
-    println!();
-    println!("{}", "🧭 Routing Summary (multi-node Master)".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "🧭 Routing Summary (multi-node Master)".bold());
+        println!();
+    }
 
     match mn::routing_summary().await {
         Ok(data) => {
