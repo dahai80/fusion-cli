@@ -19,10 +19,16 @@ impl PermissionTier {
     pub fn allow_tool(&self, tool_name: &str) -> bool {
         match self {
             PermissionTier::Sandbox => {
-                // 仅允许只读工具 (注册表中实际存在的)。bench_speed 有副作用 (发起推理/占 GPU) → 禁。
-                let safe: HashSet<&str> = ["list_models", "model_info", "health"]
-                    .into_iter()
-                    .collect();
+                // 仅允许只读工具 (注册表中实际存在的)。bench_speed/model_pull 有副作用 → 禁。
+                let safe: HashSet<&str> = [
+                    "list_models",
+                    "model_info",
+                    "health",
+                    "kb_query",
+                    "service_status",
+                ]
+                .into_iter()
+                .collect();
                 safe.contains(tool_name)
             }
             PermissionTier::Ask | PermissionTier::Auto => true,
@@ -33,10 +39,10 @@ impl PermissionTier {
         match self {
             PermissionTier::Sandbox | PermissionTier::Auto => false,
             PermissionTier::Ask => {
-                // 仅对有副作用的已注册工具要求确认。bench_speed 真实发起推理, 占用 GPU。
-                // 之前的危险名单 (delete_model/stop_task/shell/run_task) 全部未在注册表中,
-                // 导致确认提示永不触发 — 现修正为实际注册的有副作用工具。
-                let dangerous: HashSet<&str> = ["bench_speed"].into_iter().collect();
+                // 仅对有副作用的已注册工具要求确认:
+                //   bench_speed — 发起推理占 GPU。
+                //   model_pull — 占网络/磁盘拉模型 (G2)。
+                let dangerous: HashSet<&str> = ["bench_speed", "model_pull"].into_iter().collect();
                 dangerous.contains(tool_name)
             }
         }
@@ -65,13 +71,17 @@ mod tests {
         assert!(tier.allow_tool("list_models"));
         assert!(tier.allow_tool("model_info"));
         assert!(tier.allow_tool("health"));
+        // G2 只读工具 sandbox 放行
+        assert!(tier.allow_tool("kb_query"));
+        assert!(tier.allow_tool("service_status"));
     }
 
     #[test]
     fn test_sandbox_blocks_side_effect_tools() {
         let tier = PermissionTier::Sandbox;
-        // bench_speed 有副作用 (发起推理), sandbox 必须禁。
+        // bench_speed/model_pull 有副作用, sandbox 必须禁。
         assert!(!tier.allow_tool("bench_speed"));
+        assert!(!tier.allow_tool("model_pull"));
         assert!(!tier.allow_tool("nonexistent_tool"));
     }
 
@@ -87,6 +97,8 @@ mod tests {
         let tier = PermissionTier::Ask;
         // 关键回归: bench_speed 是实际注册的有副作用工具, Ask tier 必须要求确认。
         assert!(tier.requires_confirmation("bench_speed"));
+        // G2: model_pull 有副作用 (拉模型占网络/磁盘), Ask tier 必须要求确认。
+        assert!(tier.requires_confirmation("model_pull"));
     }
 
     #[test]
@@ -95,6 +107,9 @@ mod tests {
         assert!(!tier.requires_confirmation("list_models"));
         assert!(!tier.requires_confirmation("model_info"));
         assert!(!tier.requires_confirmation("health"));
+        // G2 只读工具不要求确认
+        assert!(!tier.requires_confirmation("kb_query"));
+        assert!(!tier.requires_confirmation("service_status"));
     }
 
     #[test]

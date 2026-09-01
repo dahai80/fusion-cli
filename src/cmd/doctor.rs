@@ -191,6 +191,51 @@ pub async fn run() -> Result<()> {
     .await;
     println!();
 
+    // 9c. #52 限流熔断状态
+    println!(
+        "{}",
+        "🛡️ Backpressure (rate-limit / circuit breaker)".bold()
+    );
+    let bp_state = crate::utils::backpressure::mlx_breaker_state();
+    let cfg = crate::config::load_config();
+    let bp = cfg
+        .backpressure
+        .as_ref()
+        .map(|b| {
+            (
+                b.capacity,
+                b.refill_rate,
+                b.failure_threshold,
+                b.open_secs,
+                b.breaker_enabled,
+            )
+        })
+        .unwrap_or((10, 5, 5, 30, true));
+    println!(
+        "  {} Token bucket: capacity={}, refill={}/sec",
+        "✅".green(),
+        bp.0,
+        bp.1
+    );
+    if bp.4 {
+        let (icon, label) = match bp_state {
+            crate::utils::backpressure::BreakerState::Closed => ("✅".green(), "Closed (healthy)"),
+            crate::utils::backpressure::BreakerState::Open => {
+                ("🔴".red(), "Open (failing — fail-fast active)")
+            }
+            crate::utils::backpressure::BreakerState::HalfOpen => {
+                ("🟡".yellow(), "HalfOpen (probing)")
+            }
+        };
+        println!(
+            "  {} Circuit breaker: {} (threshold={}, open={}s)",
+            icon, label, bp.2, bp.3
+        );
+    } else {
+        println!("  {} Circuit breaker: disabled", "⬜".dimmed());
+    }
+    println!();
+
     // 10. 依赖完整性 + 版本
     println!("{}", "📦 Dependency Check".bold());
     println!("  {} Rust toolchain: stable", "✅".green());
@@ -247,6 +292,63 @@ pub async fn run() -> Result<()> {
                         cfg.config_version,
                         crate::config::CURRENT_CONFIG_VERSION,
                         "fusion config set config-version 0.3.5".cyan()
+                    );
+                }
+                // 密钥年龄检查 (#49): rotated_at >90 天告警; 从未轮换 (空) 则提示。
+                if cfg.mlx.key_rotated_at.is_empty() {
+                    println!(
+                        "  {} API key never rotated — run {} to set rotation timestamp.",
+                        "⚠️".yellow(),
+                        "fusion config rotate-key".cyan()
+                    );
+                } else if let Ok(rotated) =
+                    chrono::DateTime::parse_from_rfc3339(&cfg.mlx.key_rotated_at)
+                {
+                    let age_days =
+                        (chrono::Utc::now() - rotated.with_timezone(&chrono::Utc)).num_days();
+                    if age_days > 90 {
+                        println!(
+                            "  {} API key is {} days old (>90) — rotate with {}",
+                            "⚠️".yellow(),
+                            age_days,
+                            "fusion config rotate-key".cyan()
+                        );
+                    } else {
+                        println!("  {} API key rotated {} days ago", "✅".green(), age_days);
+                    }
+                } else {
+                    println!(
+                        "  {} key_rotated_at is not valid RFC3339 ({}): re-run {}",
+                        "⚠️".yellow(),
+                        cfg.mlx.key_rotated_at,
+                        "fusion config rotate-key".cyan()
+                    );
+                }
+                // #50 静态加密状态: encrypt_secrets 开启但 master.key 缺失 → 密文不可解;
+                // 关闭且有 enc: 前缀密文 → 旧加密遗留未解 (load 已尽力解, 此处告警磁盘状态)。
+                if cfg.auth.encrypt_secrets {
+                    if crate::utils::crypto::master_key_exists() {
+                        println!(
+                            "  {} At-rest encryption: enabled (master.key present)",
+                            "✅".green()
+                        );
+                    } else {
+                        println!(
+                            "  {} encrypt_secrets=on but master.key missing — secrets cannot decrypt.",
+                            "⚠️".yellow()
+                        );
+                        println!(
+                            "     Run {} to regenerate (old ciphertext stays locked).",
+                            "fusion config set auth.encrypt-secrets true".cyan()
+                        );
+                    }
+                } else if cfg.mlx.api_key.starts_with("enc:")
+                    || cfg.mlx.key_previous.starts_with("enc:")
+                {
+                    println!(
+                        "  {} encrypt_secrets=off but ciphertext on disk — enable {} to decrypt.",
+                        "⚠️".yellow(),
+                        "fusion config set auth.encrypt-secrets true".cyan()
                     );
                 }
             }

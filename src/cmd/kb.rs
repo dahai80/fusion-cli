@@ -4,6 +4,7 @@ use colored::*;
 use tabled::{Table, Tabled};
 
 use crate::service::kb as kb_svc;
+use crate::service::rag as rag_svc;
 
 #[derive(Subcommand)]
 pub enum KbCommands {
@@ -234,14 +235,96 @@ async fn ingest_kb(name: String, path: String) -> Result<()> {
         let _ = std::fs::write(&meta_path, serde_json::to_string_pretty(&meta)?);
     }
 
-    // G1 修复: 明确告知用户本操作仅为文件归集 (待向量化), 非实时检索入库。
-    // 真正向量化检索需 fusion-rag 服务对文档做 embedding + 索引 (见后续 upstream 联动)。
+    // 真正向量化: 对成功归集的文件调 fusion-rag ingest (embedding + 向量入库)。
+    // fusion-rag 不可用时优雅降级 — 仅文件归集, 提示用户起服务后重跑, 不阻断 (Rule 12 显式可见)。
+    if success_count == 0 {
+        println!("  {} No files staged, skipping vectorization.", "ℹ️".blue());
+        return Ok(());
+    }
+    println!();
+    println!("{} Vectorizing via fusion-rag...", "🔬".bold());
+    let rag_alive = rag_svc::health_check().await.unwrap_or(false);
+    if !rag_alive {
+        println!(
+            "  {} fusion-rag not running — files staged but NOT vectorized.",
+            "⚠️".yellow()
+        );
+        println!(
+            "     Start it: fusion rag start, then re-run `fusion kb ingest {} --path {}`",
+            name, path
+        );
+        return Ok(());
+    }
+    let mut vec_ok = 0u64;
+    let mut vec_fail = 0u64;
+    for file in &files {
+        let file_name = file
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let dest = kb_dir.join(&*file_name);
+        if !dest.exists() {
+            continue;
+        }
+        let content = match std::fs::read_to_string(&dest) {
+            Ok(c) => c,
+            Err(_) => {
+                println!("  {} Skip non-UTF8 file: {}", "⚠️".yellow(), file_name);
+                vec_fail += 1;
+                continue;
+            }
+        };
+        let ctype = content_type_for(&file_name);
+        match rag_svc::ingest_content(&name, &content, &file_name, ctype).await {
+            Ok(_) => {
+                vec_ok += 1;
+                println!("  {} Vectorized: {}", "✅".green(), file_name);
+            }
+            Err(e) => {
+                vec_fail += 1;
+                println!(
+                    "  {} Vectorize failed: {} ({})",
+                    "⚠️".yellow(),
+                    file_name,
+                    e
+                );
+            }
+        }
+    }
     println!(
-        "  {} Files staged in KB dir (not yet vectorized). Run fusion-rag indexing for retrieval.",
-        "ℹ️".blue()
+        "  {} Vectorized {}/{} file(s) into RAG index (kb_id={}).",
+        "✅".green(),
+        vec_ok,
+        vec_ok + vec_fail,
+        name.cyan()
     );
+    if vec_fail > 0 {
+        println!(
+            "  {} {} file(s) failed vectorization; see messages above.",
+            "⚠️".yellow(),
+            vec_fail
+        );
+    }
+    println!("  Query with: fusion rag search {} \"<question>\"", name);
 
     Ok(())
+}
+
+// 按扩展名映射 fusion-rag content_type (CONTENT_TYPE_MAP 子集)。
+fn content_type_for(file_name: &str) -> &'static str {
+    let lower = file_name.to_ascii_lowercase();
+    if lower.ends_with(".md") {
+        "markdown"
+    } else if lower.ends_with(".json") {
+        "json"
+    } else if lower.ends_with(".html") || lower.ends_with(".htm") {
+        "html"
+    } else if lower.ends_with(".csv") {
+        "csv"
+    } else {
+        "text"
+    }
 }
 
 async fn query_kb(name: String, question: String) -> Result<()> {
@@ -385,4 +468,29 @@ struct KbEntry {
     documents: String,
     #[tabled(rename = "Size")]
     size: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_content_type_for_extensions() {
+        assert_eq!(content_type_for("notes.md"), "markdown");
+        assert_eq!(content_type_for("data.json"), "json");
+        assert_eq!(content_type_for("page.html"), "html");
+        assert_eq!(content_type_for("page.htm"), "html");
+        assert_eq!(content_type_for("rows.csv"), "csv");
+        assert_eq!(content_type_for("readme.txt"), "text");
+        assert_eq!(content_type_for("noext"), "text");
+        assert_eq!(content_type_for("UPPER.MD"), "markdown");
+    }
+
+    #[test]
+    fn test_check_kb_name_rejects_separator() {
+        assert!(check_kb_name("../escape").is_err());
+        assert!(check_kb_name("a/b").is_err());
+        assert!(check_kb_name("ok-name").is_ok());
+        assert!(check_kb_name("").is_err());
+    }
 }

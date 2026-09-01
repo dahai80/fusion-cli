@@ -4,12 +4,14 @@
 mod agent;
 mod cmd;
 mod config;
+mod rbac;
 mod service;
 mod tools;
 mod tui;
 mod utils;
 
 use clap::{CommandFactory, Parser, Subcommand};
+use colored::Colorize;
 
 #[derive(Parser)]
 #[command(name = "fusion")]
@@ -240,6 +242,17 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
     // 审计轨迹: 记录命令标签 + 耗时 + 结果。match 消费 cli.command, 故先提取标签。
     let audit_cmd = audit_label(&cli.command);
     let audit_start = std::time::Instant::now();
+
+    // RBAC 门禁 (defense-in-depth): auth 启用后按 FUSION_API_KEY 角色预过滤。
+    // reader 级命令始终放行; reader 之上拒绝则立即返回, 不进 dispatch, 记审计为 denied。
+    if let Err(reason) = rbac::check(&audit_cmd) {
+        tracing::warn!(command = %audit_cmd, reason = %reason, "RBAC denied");
+        eprintln!("{} {}", "🚫".red(), reason);
+        crate::utils::audit::record(&audit_cmd, "denied", 0, &reason);
+        crate::utils::metrics::inc_request();
+        crate::utils::metrics::inc_request_error();
+        anyhow::bail!(reason);
+    }
 
     // 执行命令
     let result = dispatch(cli).await;

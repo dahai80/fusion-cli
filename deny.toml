@@ -1,0 +1,67 @@
+# #53 依赖锁固化: cargo-deny 配置 (cargo-deny v0.20 schema)。
+# CI 运行 `cargo deny check` 守护: 许可证白名单 + 漏洞公告 + 重复依赖 + 禁包 + 源白名单。
+# 运行本地: cargo install cargo-deny && cargo deny check
+
+[graph]
+# 校验全部依赖 (含 dev/build), 与 CI cargo test --all-targets 范围一致。
+all-features = true
+
+[output]
+feature-depth = 1
+
+# 漏洞公告 (cargo deny check advisories): 拉 RustSec advisory-db, 已知 CVE 直接 fail。
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# 已知未修但接受的公告 (yanked 等可忽略项) 放此白名单。
+# 以下为 "unmaintained" 类公告 (非安全 CVE), 由传递依赖引入, 上游无安全升级:
+#   - paste (RUSTSEC-2024-0436): ratatui 0.29 间接依赖, 无安全升级, ratatui 升级属独立 TUI 迁移。
+#   - proc-macro-error2 (RUSTSEC-2026-0173): tabled 0.18 间接依赖, 无安全升级, tabled 升级属独立迁移。
+# 接受原因: 非 CVE (无已知可利用漏洞), 纯维护状态; 升级依赖属独立任务, 不在 #53 锁固化范围。
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste unmaintained (non-CVE), pulled by ratatui 0.29; upgrade ratatui is separate TUI migration, out of #53 scope" },
+    { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained (non-CVE), pulled by tabled 0.18; upgrade tabled is separate migration, out of #53 scope" },
+    { id = "RUSTSEC-2025-0119", reason = "number_prefix unmaintained (non-CVE), pulled by indicatif 0.17; upgrade indicatif is separate migration, out of #53 scope" },
+]
+
+# 许可证白名单 — 全部为宽松许可, 无 copyleft (GPL/LGPL/AGPL)。
+# 企业商用安全: 仅允许 MIT/Apache/BSD/ISC/MPL/Zlib/Unicode/Unlicense/BSL 系列。
+# allow 接受单个 SPDX 标识符 (+ 可选 WITH 异常); cargo-deny 自动拆解 OR/AND 逐分支校验。
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "BSL-1.0",
+]
+confidence-threshold = 0.8
+# 无 machine-readable license 的包按需 clarify; 初始无例外。
+exceptions = []
+
+[licenses.private]
+# 不忽略未发布 crate (本 CLI 是发布包)。
+ignore = false
+
+# 重复依赖检测: 同 crate 多版本膨胀二进制 + 增加攻击面。
+[bans]
+multiple-versions = "warn"
+# 通配版本要求 (req = "*") — warn 不 deny (build 脚本常见, 过严阻断)。
+wildcards = "warn"
+highlight = "all"
+# 显式禁包清单 (已知恶意/废弃/不合规) — 初始为空, 按需追加。
+deny = []
+# 允许 build 脚本重复版本 (proc-macro 常见)。
+skip = []
+
+# 仅允许 crates.io 官方源 + 本地 path — 禁三方 git 源 (供应链注入风险)。
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

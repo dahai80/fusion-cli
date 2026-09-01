@@ -78,10 +78,12 @@ pub fn validate_path_segment(field: &str, value: &str) -> anyhow::Result<()> {
 
 pub struct ServiceUrls {
     pub mlx: String,
+    pub mlx_failover_urls: Vec<String>,
     pub mlx_api_key: String,
     pub kb: String,
     pub modelhub: String,
     pub rag: String,
+    pub rag_api_key: String,
     pub desk: String,
     pub doc: String,
     pub memory: String,
@@ -96,10 +98,12 @@ impl ServiceUrls {
         let config = cached_config();
         Self {
             mlx: config.mlx.base_url.clone(),
+            mlx_failover_urls: config.mlx.failover_urls.clone(),
             mlx_api_key: config.mlx.api_key.clone(),
             kb: config.kb.base_url.clone(),
             modelhub: config.modelhub.base_url.clone(),
             rag: config.rag.base_url.clone(),
+            rag_api_key: config.rag.api_key.clone(),
             desk: config.desk.base_url.clone(),
             doc: config.doc.base_url.clone(),
             memory: config.memory.base_url.clone(),
@@ -123,6 +127,27 @@ impl ServiceUrls {
             .trim_end_matches("/v1")
             .trim_end_matches('/')
             .to_string()
+    }
+
+    // HA: 主 + failover 备用 MLX 根路径候选列表 (已 trim, 去重, 去空)。
+    // 主 URL 始终首位; failover_urls 顺序追加。调用方按序探测 /health 选首个存活。
+    pub fn mlx_base_candidates(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let primary = self.mlx_base();
+        if !primary.is_empty() {
+            out.push(primary);
+        }
+        for url in &self.mlx_failover_urls {
+            let norm = url
+                .trim_end_matches('/')
+                .trim_end_matches("/v1")
+                .trim_end_matches('/')
+                .to_string();
+            if !norm.is_empty() && !out.contains(&norm) {
+                out.push(norm);
+            }
+        }
+        out
     }
 
     pub fn mlx_auth_header(&self) -> Option<(&'static str, String)> {
@@ -197,6 +222,38 @@ pub async fn check_url_with_retry(url: &str, timeout_secs: u64, max_retries: u32
     false
 }
 
+// HA failover: 按 mlx_base_candidates() 顺序探测 /health, 返回首个存活根路径。
+// 全部不可达则返回主候选 (让后续请求以真实错误暴露根因, 不静默吞)。
+// 探测用短超时 (1.5s) 避免多节点全挂时累计延迟过大。
+#[allow(dead_code)]
+pub async fn pick_alive_mlx_base() -> String {
+    let urls = ServiceUrls::from_config();
+    let candidates = urls.mlx_base_candidates();
+    if candidates.len() <= 1 {
+        return urls.mlx_base();
+    }
+    let client = get_client();
+    for base in &candidates {
+        let url = format!("{}/health", base);
+        match client
+            .get(&url)
+            .timeout(Duration::from_millis(1500))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                tracing::info!(base = %base, "HA: selected alive MLX base");
+                return base.clone();
+            }
+            _ => {
+                tracing::warn!(base = %base, "HA: MLX base unreachable, trying next failover");
+            }
+        }
+    }
+    tracing::warn!("HA: all MLX failover candidates unreachable, falling back to primary");
+    urls.mlx_base()
+}
+
 // 统一: 检查 HTTP 状态码, 非 2xx bail 出可读错误 (服务名 + 状态 + 截断 body),
 // 否则解析 JSON。避免裸 resp.json() 把 nginx 502 HTML 解析错吐成不可懂的 serde 错。
 pub async fn json_or_error(
@@ -266,5 +323,44 @@ mod tests {
     fn test_validate_path_segment_accepts_safe() {
         assert!(validate_path_segment("id", "node-1").is_ok());
         assert!(validate_path_segment("id", "mem-abc-123").is_ok());
+    }
+
+    #[test]
+    fn test_mlx_base_candidates_primary_first() {
+        let mut urls = ServiceUrls::from_config();
+        urls.mlx = "http://localhost:11432".to_string();
+        urls.mlx_failover_urls = vec![
+            "http://node-2:11432/v1/".to_string(),
+            "http://node-3:11432".to_string(),
+        ];
+        let cands = urls.mlx_base_candidates();
+        assert_eq!(cands.len(), 3);
+        assert_eq!(cands[0], "http://localhost:11432");
+        assert_eq!(cands[1], "http://node-2:11432");
+        assert_eq!(cands[2], "http://node-3:11432");
+    }
+
+    #[test]
+    fn test_mlx_base_candidates_dedup() {
+        let mut urls = ServiceUrls::from_config();
+        urls.mlx = "http://localhost:11432".to_string();
+        urls.mlx_failover_urls = vec![
+            "http://localhost:11432/v1".to_string(),
+            "".to_string(),
+            "http://node-2:11432".to_string(),
+        ];
+        let cands = urls.mlx_base_candidates();
+        // 主 + 去重 + 去空 → 2 个
+        assert_eq!(cands.len(), 2);
+        assert_eq!(cands[0], "http://localhost:11432");
+    }
+
+    #[test]
+    fn test_mlx_base_candidates_empty_when_no_failover() {
+        let mut urls = ServiceUrls::from_config();
+        urls.mlx = "http://localhost:11432".to_string();
+        urls.mlx_failover_urls = Vec::new();
+        let cands = urls.mlx_base_candidates();
+        assert_eq!(cands.len(), 1);
     }
 }

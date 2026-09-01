@@ -176,7 +176,7 @@ Interactive terminal dashboard with real-time monitoring:
 | `agent <prompt> --permission=ask` | Ask before dangerous operations (default) |
 | `agent <prompt> --permission=auto` | Full auto-pilot |
 
-**Available tools**: `list_models`, `model_info`, `health`, `bench_speed`
+**Available tools**: `list_models`, `model_info`, `health`, `bench_speed`, `kb_query`, `service_status`, `model_pull`. Sandbox tier allows read-only tools only (`list_models`, `model_info`, `health`, `kb_query`, `service_status`); side-effect tools (`bench_speed`, `model_pull`) are blocked in sandbox and require confirmation in `ask` tier.
 
 ### Knowledge Base (`fusion kb`)
 
@@ -227,7 +227,9 @@ Interactive terminal dashboard with real-time monitoring:
 | `list` | List automation templates (API or fallback) |
 | `run <name>` | Execute an automation template |
 | `history [--limit=20]` | View task execution history |
-| `cron <name> --rule="0 21 * * *"` | Schedule a recurring task |
+| `cron <name> --rule="0 21 * * *"` | Schedule a recurring task (persisted to `~/.fusion/cron.json`) |
+| `cron-list` | List persisted cron schedules |
+| `cron-rm <name>` | Remove a persisted cron schedule |
 | `stop --task-id=<id>` | Stop a running task |
 
 ### Document Service (`fusion doc`)
@@ -392,6 +394,26 @@ fusion-mlx inference routes through the gateway (`http://localhost:11432`, OpenA
 | Fusion-Bench | `http://localhost:11467` | `bench.base_url` |
 | Fusion-MultiNode | `http://localhost:11452` | `multinode.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
+
+---
+
+## 🚦 Release Strategy
+
+The `fusion` binary ships through a staged canary → beta → stable channel
+pipeline with human-reviewed promotion gates and a documented rollback
+procedure. This is a CI/CD-layer concern (GitHub Actions release workflows),
+not CLI source code.
+
+- **Channels**: `stable` (`vX.Y.Z`), `canary` (`canary-v…-DATE-SHA`), `beta`
+  (`vX.Y.Z-beta.N`). Users opt into a channel via `FUSION_RELEASE_CHANNEL` or
+  the Homebrew formula (`@stable` / `@canary` / `@beta`).
+- **Gates**: CI must be green; no open `regression`/`bug` issue against the
+  candidate tag; `cargo deny` clean; at least one canary user reports clean
+  `fusion doctor` + `fusion audit verify`.
+- **Rollback**: never re-tag — roll forward by cutting a patch revert tag and
+  re-pinning the distribution surfaces to the last known-good release.
+
+Full spec: [`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md).
 
 ---
 

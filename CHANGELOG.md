@@ -5,6 +5,57 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-01
+
+Enterprise production-readiness round 3 — completes all 10 blockers to
+commercial-grade production (#46–#55): audit tamper-proofing (#6), rate-limit
++ circuit-breaker backpressure (#7), dependency lock hardening (#8),
+canary/gray-release strategy spec (#9), and agent tool expansion + cron
+persistence (#10). 138 → 142 tests. All gates green (fmt/test/clippy/deny).
+
+### Added — Compliance & Reliability
+- **Audit hash chain** (#51): append-only `audit.log` records now carry
+  `prev_hash` + `hash` forming a SHA-256 chain (genesis = 64 zeros), so any
+  in-place edit, insertion, deletion, or reorder is detectable. New
+  `fusion audit verify` exits non-zero on a broken chain. Old un-hashed records
+  still parse via `#[serde(default)]`.
+- **Backpressure** (#52): token-bucket rate limiter + circuit breaker guard all
+  MLX inference entry points (`chat`, `chat_completion_stream`, `create_embedding`).
+  Breaker fail-fasts (Open) after N consecutive failures to avoid per-command
+  120s timeouts when the backend is down; cools down to HalfOpen, probes one
+  call, then recovers (Closed) or re-opens. Configurable via `[backpressure]`
+  section; lightweight `health`/`list_models`/`stats` GETs are NOT throttled.
+  `fusion doctor` now reports bucket capacity/refill + breaker state.
+- **Dependency lock hardening** (#53): `Cargo.lock` is now committed (binary
+  crate convention) for reproducible builds. New `deny.toml` + CI `cargo deny`
+  job guard licenses (permissive allow-list, no copyleft), RustSec advisories,
+  duplicate deps, and crates.io-only sources. Three non-CVE "unmaintained"
+  transitive crates documented as accepted risk pending upstream migrations.
+
+### Documentation — Release Strategy
+- **Canary/gray-release strategy** (#54): new [`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md)
+  specifies release channels (stable/canary/beta), SemVer tag policy, the
+  staged canary→beta→stable promotion pipeline with human-reviewed gates,
+  gray-release mechanics via distribution surfaces (Homebrew tap delay +
+  `FUSION_RELEASE_CHANNEL` install-script opt-in), rollback procedure, and
+  observability/gating signals. This is a CI/CD-layer concern (GitHub Actions
+  release workflows), not CLI source code — owned by release engineering.
+
+### Added — Agent Tools & Cron Persistence (#10)
+- **G2 agent tool expansion**: `ToolExecutor` now registers 3 new tools —
+  `kb_query` (read-only KB query via fusion-kb), `service_status` (read-only
+  ecosystem health check), and `model_pull` (side-effect model download via
+  ModelHub). `PermissionTier` updated: sandbox allows the 5 read-only tools,
+  blocks `bench_speed` + `model_pull`; `ask` tier requires confirmation for
+  the 2 side-effect tools. Total registered tools: 4 → 7.
+- **G3 cron persistence**: `fusion desk cron` now persists schedules to
+  `~/.fusion/cron.json` (atomic write, upsert by task name) instead of only
+  validating. New `fusion desk cron-list` (table of persisted schedules) and
+  `fusion desk cron-rm <name>` (delete). CLI still does not *execute*
+  schedules (crontab/fusion-desk service remains the executor) — persistence
+  removes the prior "CLI does NOT persist" gap. New `utils/cron_store.rs`
+  module with 4 unit tests.
+
 ## [0.3.5] - 2026-09-01
 
 Enterprise production-readiness round 2 — added audit trail, observability
