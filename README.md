@@ -415,6 +415,28 @@ not CLI source code.
 
 Full spec: [`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md).
 
+### Release Workflows (CI/CD)
+- **CI cross-platform build** (`.github/workflows/ci.yml`): the `build` job is a
+  macOS + Linux matrix that uploads `fusion-darwin-arm64` / `fusion-linux-x86_64`
+  release artifacts on every green CI run.
+- **Canary** (`.github/workflows/release-canary.yml`): on CI completion of
+  `main`, cross-builds and publishes a prerelease tagged
+  `canary-v{VERSION}-{DATE}-{SHA}`.
+- **Stable/beta** (`.github/workflows/release.yml`): on `v*` / `v*-beta.*` tag
+  push, runs the full gate on the tag, cross-builds, stages `Cargo.lock`, and
+  publishes a GitHub Release (stable published, beta prerelease).
+
+### Observability Export
+- `fusion metrics export` — Prometheus 0.0.4 text exposition (6 counters +
+  latency histogram) for the node_exporter textfile collector.
+- Alert rules + SLO spec: [`docs/ALERTING.md`](docs/ALERTING.md) (error rate,
+  P95 latency, circuit-breaker-open, audit-chain-broken).
+
+### Integration Tests
+- `cargo test -- --ignored mlx_live` — 3 live tests against a real fusion-mlx
+  instance + loaded model (health/list, chat completion, backpressure admit).
+  Excluded from the default gate (no backend required).
+
 ---
 
 ## 🛣️ Roadmap

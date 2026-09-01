@@ -407,6 +407,18 @@ fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*`
 
 完整规范：[`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md)（英文）。
 
+### 发布工作流（CI/CD）
+- **CI 跨平台构建**（`.github/workflows/ci.yml`）：`build` 任务为 macOS + Linux 矩阵，每次 CI 全绿即上传 `fusion-darwin-arm64` / `fusion-linux-x86_64` 发布产物。
+- **金丝雀**（`.github/workflows/release-canary.yml`）：`main` 的 CI 完成后触发，跨平台构建并发布预发布版，标签 `canary-v{版本}-{日期}-{SHA}`。
+- **Stable/beta**（`.github/workflows/release.yml`）：推 `v*` / `v*-beta.*` 标签触发，在标签上跑全门禁，跨平台构建，附带 `Cargo.lock` 保证可复现，发布 GitHub Release（stable 正式版，beta 预发布）。
+
+### 可观测性导出
+- `fusion metrics export` —— Prometheus 0.0.4 文本 exposition 格式（6 计数器 + 延迟直方图），供 node_exporter textfile collector 采集。
+- 告警规则与 SLO 规范：[`docs/ALERTING.md`](docs/ALERTING.md)（英文）（错误率、P95 延迟、熔断器开启、审计链断裂）。
+
+### 集成测试
+- `cargo test -- --ignored mlx_live` —— 3 个针对真实 fusion-mlx 实例 + 已加载模型的活体测试（健康/列表、对话补全、背压准入）。默认门禁不含（无需后端）。
+
 ---
 
 ## 🛣️ 路线图

@@ -1,0 +1,115 @@
+# #54 正式/beta 发布: 推 v* (stable) 或 v*-beta.* (beta) tag 触发。
+# 全 CI 门禁后, 跨平台构建 + 发 GitHub Release (stable 非预发布, beta 预发布)。
+# 详见 docs/RELEASE_STRATEGY.md。tag 命名规则见该文档 §2。
+
+name: Release
+
+on:
+  push:
+    tags:
+      # stable: v0.4.0 ; beta: v0.4.0-beta.1
+      - 'v*'
+      - 'v*-beta.*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 复用 CI 门禁: tag 必须先过 check/test/fmt/clippy/deny 才发版。
+  gate:
+    name: Release Gate
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-targets
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: advisories bans licenses sources
+      # 推导是否预发布 (beta tag → prerelease=true) + 版本号。
+      - name: Derive release metadata
+        id: meta
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" == *-beta.* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          VERSION="${TAG#v}"
+          VERSION="${VERSION%-beta.*}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build Release (${{ matrix.os }})
+    needs: gate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: fusion-darwin-arm64
+          - os: ubuntu-latest
+            artifact: fusion-linux-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+      - run: cargo build --release
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp target/release/fusion dist/${{ matrix.artifact }}
+          tar -C dist -czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+      # 附 Cargo.lock 保证依赖树可复现 (#53)。
+      - name: Stage lockfile
+        if: runner.os == 'Linux'
+        run: cp Cargo.lock dist/Cargo.lock
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-release
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            dist/Cargo.lock
+
+  publish:
+    name: Publish GitHub Release
+    needs: [gate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-release'
+          merge-multiple: true
+          path: assets
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ needs.gate.outputs.prerelease }}
+          generate_release_notes: true
+          body: |
+            ## Fusion CLI v${{ needs.gate.outputs.version }}
+
+            ${{ needs.gate.outputs.prerelease == 'true' && '🧪 **Beta release** — release candidate, not yet stable.' || '✅ **Stable release**.' }}
+
+            ### Artifacts
+            - `fusion-darwin-arm64.tar.gz` — macOS (Apple Silicon)
+            - `fusion-linux-x86_64.tar.gz` — Linux x86_64
+            - `Cargo.lock` — pinned dependency tree (reproducibility, #53)
+
+            See [CHANGELOG.md](CHANGELOG.md) and [docs/RELEASE_STRATEGY.md](docs/RELEASE_STRATEGY.md).
+          files: assets/*.tar.gz
