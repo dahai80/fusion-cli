@@ -11,6 +11,19 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # #53 依赖锁固化: 提交 Cargo.lock + cargo-deny 守护 (许可证/漏洞/重复/禁包)。
+  deny:
+    name: Cargo Deny (licenses/advisories/bans)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          # 校验全部维度: 许可证白名单 + RustSec 漏洞公告 + 重复依赖 + 禁包 + 源白名单。
+          # deny.toml 在仓库根自动发现; all-features 在 [graph] 段配置, 无需 CLI 传参。
+          arguments: advisories bans licenses sources
+
   check:
     name: Check
     runs-on: macos-latest
@@ -53,7 +66,7 @@ jobs:
   build:
     name: Build Release
     runs-on: macos-latest
-    needs: [check, test, fmt, clippy]
+    needs: [check, test, fmt, clippy, deny]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

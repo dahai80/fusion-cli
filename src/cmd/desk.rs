@@ -22,12 +22,16 @@ pub enum DeskCommands {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
-    /// 配置定时任务
+    /// 配置定时任务 (持久化到 ~/.fusion/cron.json)
     Cron {
         name: String,
         #[arg(short, long)]
         rule: String,
     },
+    /// 列出已持久化的定时任务
+    CronList,
+    /// 删除已持久化的定时任务
+    CronRm { name: String },
     /// 停止正在运行的自动化任务
     Stop {
         #[arg(short, long)]
@@ -41,6 +45,8 @@ pub async fn handle_desk(action: DeskCommands) -> Result<()> {
         DeskCommands::Run { name, params } => desk_run(&name, params).await,
         DeskCommands::History { limit } => desk_history(limit).await,
         DeskCommands::Cron { name, rule } => desk_cron(&name, &rule).await,
+        DeskCommands::CronList => desk_cron_list().await,
+        DeskCommands::CronRm { name } => desk_cron_rm(&name).await,
         DeskCommands::Stop { task_id } => desk_stop(task_id).await,
     }
 }
@@ -291,12 +297,15 @@ async fn desk_cron(name: &str, rule: &str) -> Result<()> {
                 .upcoming(chrono::Local)
                 .next()
                 .map(|t| t.to_string());
+            // G3: 持久化到 ~/.fusion/cron.json (同 task 覆盖)。
+            let entry = crate::utils::cron_store::upsert(name, rule)?;
             if json_mode {
                 let payload = serde_json::json!({
                     "task": name, "rule": rule, "valid": true,
                     "next_run": next_run,
-                    "persisted": false,
-                    "hint": "CLI does not persist schedules; use crontab or fusion-desk service API",
+                    "persisted": true,
+                    "created_at": entry.created_at,
+                    "hint": "Schedule persisted to ~/.fusion/cron.json. Activate via crontab or fusion-desk service.",
                 });
                 println!("{}", serde_json::to_string_pretty(&payload)?);
                 return Ok(());
@@ -312,15 +321,19 @@ async fn desk_cron(name: &str, rule: &str) -> Result<()> {
                 println!("  Next run would be: {}", next.cyan());
             }
             println!(
-                "  {} This CLI does NOT persist or execute scheduled tasks.",
+                "  {} Persisted to ~/.fusion/cron.json (created_at: {}).",
+                "💾".green(),
+                entry.created_at
+            );
+            println!(
+                "  {} This CLI does NOT execute schedules — activate via:",
                 "⚠".yellow()
             );
-            println!("     To actually schedule, use one of:");
             println!(
                 "       • crontab: crontab -e  →  {} fusion desk run {} >/dev/null 2>&1",
                 rule, name
             );
-            println!("       • fusion-desk service API (if it supports scheduling)");
+            println!("       • fusion desk cron list  →  查看已持久化任务");
         }
         Err(e) => {
             if json_mode {
@@ -336,6 +349,68 @@ async fn desk_cron(name: &str, rule: &str) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+async fn desk_cron_list() -> Result<()> {
+    let json_mode = is_json_mode();
+    let entries = crate::utils::cron_store::load()?;
+    if json_mode {
+        println!("{}", serde_json::to_string_pretty(&entries)?);
+        return Ok(());
+    }
+    if entries.is_empty() {
+        println!("{} No persisted cron schedules.", "📭".bold());
+        println!("  Use `fusion desk cron <name> --rule=\"0 21 * * *\"` to add one.");
+        return Ok(());
+    }
+    println!(
+        "{} Persisted cron schedules ({}):",
+        "🕐".bold(),
+        entries.len()
+    );
+    #[derive(Tabled)]
+    struct Row<'a> {
+        #[tabled(rename = "Task")]
+        task: &'a str,
+        #[tabled(rename = "Rule")]
+        rule: &'a str,
+        #[tabled(rename = "CreatedAt")]
+        created_at: &'a str,
+    }
+    let rows: Vec<Row> = entries
+        .iter()
+        .map(|e| Row {
+            task: &e.task,
+            rule: &e.rule,
+            created_at: &e.created_at,
+        })
+        .collect();
+    println!("{}", Table::new(rows));
+    println!(
+        "  {} Activate via crontab (this CLI does NOT execute schedules).",
+        "⚠".yellow()
+    );
+    Ok(())
+}
+
+async fn desk_cron_rm(name: &str) -> Result<()> {
+    let json_mode = is_json_mode();
+    let removed = crate::utils::cron_store::remove(name)?;
+    if json_mode {
+        let payload = serde_json::json!({ "task": name, "removed": removed });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+    if removed {
+        println!("{} Removed cron schedule: {}", "🗑️".green(), name.cyan());
+    } else {
+        println!(
+            "{} No persisted cron schedule for task: {}",
+            "⚠".yellow(),
+            name.cyan()
+        );
+    }
     Ok(())
 }
 

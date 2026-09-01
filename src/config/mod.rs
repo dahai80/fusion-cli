@@ -16,6 +16,16 @@ pub enum ConfigCommands {
     Set { key: String, value: String },
     /// 重置全局配置为默认
     Reset,
+    /// 列出 RBAC 角色密钥
+    RolesList,
+    /// 添加/更新 RBAC 角色密钥 (role: reader/operator/admin)
+    RolesAdd { key: String, role: String },
+    /// 删除 RBAC 角色密钥
+    RolesRemove { key: String },
+    /// 启用/禁用 RBAC 门禁 (on/off)
+    RolesEnable { state: String },
+    /// 轮换 MLX API key (生成随机 key, 旧 key 存入 key_previous 供 24h 宽限回滚)
+    RotateKey,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -44,7 +54,32 @@ pub struct FusionConfig {
     #[serde(default)]
     pub multinode: MultinodeConfig,
     #[serde(default)]
+    pub auth: AuthConfig,
+    #[serde(default)]
     pub log: LogConfig,
+    // #52 限流熔断: Option → 老配置无此段时 None (用代码默认), 有段时覆盖默认。
+    #[serde(default)]
+    pub backpressure: Option<crate::utils::backpressure::BackpressureConfig>,
+}
+
+// RBAC 多租户角色门禁 (defense-in-depth): enabled=false 不设门禁 (默认, 保持旧行为);
+// enabled=true 后按 FUSION_API_KEY 查 keys 表, mlx.api_key 隐式 admin (owner 永不锁死)。
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct AuthConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub keys: Vec<KeyEntry>,
+    // #50 静态加密: true 时 save_config 加密 4 个 api_key 落盘 (enc: 前缀),
+    // load_config 解密回内存明文。默认 false (向后兼容老明文配置)。
+    #[serde(default)]
+    pub encrypt_secrets: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct KeyEntry {
+    pub key: String,
+    pub role: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -112,6 +147,15 @@ pub struct MlxConfig {
     pub cache_size: String,
     #[serde(default = "default_mlx_batch")]
     pub max_batch_size: u32,
+    // HA failover: 主 base_url 不可达时按序尝试的备用网关列表 (如多节点 gateway)。
+    #[serde(default)]
+    pub failover_urls: Vec<String>,
+    // 密钥轮换: rotated_at 记录上次轮换时间 (RFC3339), 供 doctor 算密钥年龄 (>90d 告警)。
+    // key_previous 保留旧 key 供 24h 宽限期内回滚 (网关侧双 key 并存属上游, CLI 仅记录)。
+    #[serde(default)]
+    pub key_rotated_at: String,
+    #[serde(default)]
+    pub key_previous: String,
 }
 
 fn default_mlx_ctx() -> u32 {
@@ -142,6 +186,9 @@ impl Default for MlxConfig {
             api_key: default_mlx_api_key(),
             cache_size: default_mlx_cache_size(),
             max_batch_size: default_mlx_batch(),
+            failover_urls: Vec::new(),
+            key_rotated_at: String::new(),
+            key_previous: String::new(),
         }
     }
 }
@@ -168,6 +215,8 @@ impl Default for ModelhubConfig {
 pub struct RagConfig {
     #[serde(default = "default_rag_url")]
     pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
 }
 
 fn default_rag_url() -> String {
@@ -178,6 +227,7 @@ impl Default for RagConfig {
     fn default() -> Self {
         Self {
             base_url: default_rag_url(),
+            api_key: String::new(),
         }
     }
 }
@@ -296,7 +346,7 @@ impl Default for LogConfig {
     }
 }
 
-pub const CURRENT_CONFIG_VERSION: &str = "0.3.5";
+pub const CURRENT_CONFIG_VERSION: &str = "0.4.0";
 
 impl Default for FusionConfig {
     fn default() -> Self {
@@ -312,7 +362,9 @@ impl Default for FusionConfig {
             memory: MemoryConfig::default(),
             bench: BenchConfig::default(),
             multinode: MultinodeConfig::default(),
+            auth: AuthConfig::default(),
             log: LogConfig::default(),
+            backpressure: None,
         }
     }
 }
@@ -348,7 +400,12 @@ pub fn load_config() -> FusionConfig {
     if path.exists() {
         match std::fs::read_to_string(&path) {
             Ok(content) => match toml::from_str::<FusionConfig>(&content) {
-                Ok(cfg) => migrate_config(cfg),
+                Ok(cfg) => {
+                    let mut cfg = migrate_config(cfg);
+                    // #50: 落盘密文 → 内存明文。解密失败不阻断 (回退明文, doctor 告警)。
+                    decrypt_secrets(&mut cfg);
+                    cfg
+                }
                 Err(e) => {
                     // F1/A4/O1 修复: 不再静默回退。配置损坏必须:
                     // (1) 终端可见 eprintln (交互用户立刻看到, 不依赖日志文件)
@@ -404,7 +461,16 @@ pub fn save_config(config: &FusionConfig) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let content = toml::to_string_pretty(config)?;
+    // #50: encrypt_secrets 开启时克隆一份, 加密 4 个 api_key 后落盘 (内存原件仍明文)。
+    // 关闭时直接落盘明文 (向后兼容)。加密失败应 bail — 用户期望密文落盘, 静默落明文 = 泄露。
+    let to_write = if config.auth.encrypt_secrets {
+        let mut enc = config.clone();
+        encrypt_secrets(&mut enc)?;
+        enc
+    } else {
+        config.clone()
+    };
+    let content = toml::to_string_pretty(&to_write)?;
     std::fs::write(&path, content)?;
     // 写入后让 service 层配置缓存失效, 下次 from_config 重新读盘。
     crate::service::invalidate_config_cache();
@@ -412,6 +478,38 @@ pub fn save_config(config: &FusionConfig) -> Result<()> {
     // 否则 umask 宽松环境下同机其他用户可读集群 token (R10)。
     restrict_config_perms(&path);
     Ok(())
+}
+
+// #50: 加密 4 个 api_key 字段 (mlx/rag/memory/multinode)。encrypt() 对 enc: 前缀幂等。
+fn encrypt_secrets(cfg: &mut FusionConfig) -> Result<()> {
+    cfg.mlx.api_key = crate::utils::crypto::encrypt(&cfg.mlx.api_key)?;
+    cfg.rag.api_key = crate::utils::crypto::encrypt(&cfg.rag.api_key)?;
+    cfg.memory.api_key = crate::utils::crypto::encrypt(&cfg.memory.api_key)?;
+    cfg.multinode.api_key = crate::utils::crypto::encrypt(&cfg.multinode.api_key)?;
+    // key_previous 也含旧密钥, 一并加密。
+    cfg.mlx.key_previous = crate::utils::crypto::encrypt(&cfg.mlx.key_previous)?;
+    Ok(())
+}
+
+// #50: 解密上述字段。decrypt() 对明文幂等 (passthrough), 对 enc: 前缀解密。
+// master.key 缺失时 decrypt 返回原文 (不 bail), doctor 负责告警。
+fn decrypt_secrets(cfg: &mut FusionConfig) {
+    // 逐字段解密, 单字段失败不影响其余 (尽最大努力恢复, 失败字段保留密文)。
+    if let Ok(v) = crate::utils::crypto::decrypt(&cfg.mlx.api_key) {
+        cfg.mlx.api_key = v;
+    }
+    if let Ok(v) = crate::utils::crypto::decrypt(&cfg.rag.api_key) {
+        cfg.rag.api_key = v;
+    }
+    if let Ok(v) = crate::utils::crypto::decrypt(&cfg.memory.api_key) {
+        cfg.memory.api_key = v;
+    }
+    if let Ok(v) = crate::utils::crypto::decrypt(&cfg.multinode.api_key) {
+        cfg.multinode.api_key = v;
+    }
+    if let Ok(v) = crate::utils::crypto::decrypt(&cfg.mlx.key_previous) {
+        cfg.mlx.key_previous = v;
+    }
 }
 
 #[cfg(unix)]
@@ -435,6 +533,11 @@ pub async fn handle_config(action: ConfigCommands) -> Result<()> {
         ConfigCommands::Get { key } => get_config(key),
         ConfigCommands::Set { key, value } => set_config(key, value).await,
         ConfigCommands::Reset => reset_config().await,
+        ConfigCommands::RolesList => roles_list(),
+        ConfigCommands::RolesAdd { key, role } => roles_add(key, role),
+        ConfigCommands::RolesRemove { key } => roles_remove(key),
+        ConfigCommands::RolesEnable { state } => roles_enable(state).await,
+        ConfigCommands::RotateKey => rotate_key(),
     }
 }
 
@@ -471,8 +574,12 @@ fn get_config(key: String) -> Result<()> {
         "mlx.api-key" => config.mlx.api_key.clone(),
         "mlx.cache-size" => config.mlx.cache_size.clone(),
         "mlx.max-batch-size" => config.mlx.max_batch_size.to_string(),
+        "mlx.failover-urls" => config.mlx.failover_urls.join(","),
+        "mlx.key-rotated-at" => config.mlx.key_rotated_at.clone(),
+        "mlx.key-previous" => config.mlx.key_previous.clone(),
         "modelhub.base-url" => config.modelhub.base_url.clone(),
         "rag.base-url" => config.rag.base_url.clone(),
+        "rag.api-key" => config.rag.api_key.clone(),
         "desk.base-url" => config.desk.base_url.clone(),
         "doc.base-url" => config.doc.base_url.clone(),
         "memory.base-url" => config.memory.base_url.clone(),
@@ -481,10 +588,16 @@ fn get_config(key: String) -> Result<()> {
         "multinode.base-url" => config.multinode.base_url.clone(),
         "multinode.api-key" => config.multinode.api_key.clone(),
         "log.level" => config.log.level.clone(),
+        "auth.encrypt-secrets" => config.auth.encrypt_secrets.to_string(),
+        "backpressure.capacity" => bp_get(&config, |c| c.capacity.to_string()),
+        "backpressure.refill-rate" => bp_get(&config, |c| c.refill_rate.to_string()),
+        "backpressure.failure-threshold" => bp_get(&config, |c| c.failure_threshold.to_string()),
+        "backpressure.open-secs" => bp_get(&config, |c| c.open_secs.to_string()),
+        "backpressure.breaker-enabled" => bp_get(&config, |c| c.breaker_enabled.to_string()),
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
             println!(
-                "  Available keys: config-version, model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, memory.base-url, memory.api-key, bench.base-url, multinode.base-url, multinode.api-key, log.level"
+                "  Available keys: config-version, model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size, mlx.failover-urls, mlx.key-rotated-at, mlx.key-previous, modelhub.base-url, rag.base-url, rag.api-key, desk.base-url, doc.base-url, memory.base-url, memory.api-key, bench.base-url, multinode.base-url, multinode.api-key, log.level, auth.encrypt-secrets, backpressure.capacity, backpressure.refill-rate, backpressure.failure-threshold, backpressure.open-secs, backpressure.breaker-enabled"
             );
             return Ok(());
         }
@@ -517,8 +630,18 @@ async fn set_config(key: String, value: String) -> Result<()> {
                 .parse()
                 .map_err(|_| anyhow::anyhow!("Invalid integer"))?
         }
+        "mlx.failover-urls" => {
+            config.mlx.failover_urls = value
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        }
+        "mlx.key-rotated-at" => config.mlx.key_rotated_at = value.clone(),
+        "mlx.key-previous" => config.mlx.key_previous = value.clone(),
         "modelhub.base-url" => config.modelhub.base_url = value.clone(),
         "rag.base-url" => config.rag.base_url = value.clone(),
+        "rag.api-key" => config.rag.api_key = value.clone(),
         "desk.base-url" => config.desk.base_url = value.clone(),
         "doc.base-url" => config.doc.base_url = value.clone(),
         "memory.base-url" => config.memory.base_url = value.clone(),
@@ -527,6 +650,38 @@ async fn set_config(key: String, value: String) -> Result<()> {
         "multinode.base-url" => config.multinode.base_url = value.clone(),
         "multinode.api-key" => config.multinode.api_key = value.clone(),
         "log.level" => config.log.level = value.clone(),
+        "auth.encrypt-secrets" => {
+            let on: bool = value
+                .parse()
+                .map_err(|_| anyhow::anyhow!("Invalid boolean (true/false)"))?;
+            config.auth.encrypt_secrets = on;
+            // 开启时立即生成 master.key (避免下次 save 才生成, doctor 提前可见)。
+            if on {
+                crate::utils::crypto::ensure_master_key()?;
+            }
+        }
+        "backpressure.capacity" => bp_set(&mut config, |c| {
+            c.capacity = value.parse().map_err(|_| anyhow::anyhow!("Invalid u32"))?;
+            Ok(())
+        })?,
+        "backpressure.refill-rate" => bp_set(&mut config, |c| {
+            c.refill_rate = value.parse().map_err(|_| anyhow::anyhow!("Invalid u32"))?;
+            Ok(())
+        })?,
+        "backpressure.failure-threshold" => bp_set(&mut config, |c| {
+            c.failure_threshold = value.parse().map_err(|_| anyhow::anyhow!("Invalid u32"))?;
+            Ok(())
+        })?,
+        "backpressure.open-secs" => bp_set(&mut config, |c| {
+            c.open_secs = value.parse().map_err(|_| anyhow::anyhow!("Invalid u64"))?;
+            Ok(())
+        })?,
+        "backpressure.breaker-enabled" => bp_set(&mut config, |c| {
+            c.breaker_enabled = value
+                .parse()
+                .map_err(|_| anyhow::anyhow!("Invalid boolean (true/false)"))?;
+            Ok(())
+        })?,
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
             return Ok(());
@@ -553,9 +708,224 @@ async fn reset_config() -> Result<()> {
     Ok(())
 }
 
+fn valid_role(role: &str) -> bool {
+    matches!(
+        role.to_ascii_lowercase().as_str(),
+        "reader" | "operator" | "admin"
+    )
+}
+
+fn roles_list() -> Result<()> {
+    let config = load_config();
+    println!();
+    println!("{}", "🔑  RBAC Role Keys".bold());
+    println!(
+        "  Enabled: {}",
+        if config.auth.enabled {
+            "on".green()
+        } else {
+            "off".red()
+        }
+    );
+    println!(
+        "  Owner key (implicit admin): mlx.api-key = {}",
+        "***".yellow()
+    );
+    println!();
+    if config.auth.keys.is_empty() {
+        println!("  No role keys configured. Use `fusion config roles-add <key> <role>`.");
+    } else {
+        for entry in &config.auth.keys {
+            println!(
+                "  role={:<10} key={}",
+                entry.role.cyan(),
+                entry.key.yellow()
+            );
+        }
+    }
+    println!();
+    println!("  Roles: reader (info+inference) / operator (services+models) / admin (config+init)");
+    println!("  Auth via env FUSION_API_KEY; mlx.api-key always resolves to admin.");
+    Ok(())
+}
+
+fn roles_add(key: String, role: String) -> Result<()> {
+    if !valid_role(&role) {
+        anyhow::bail!("invalid role '{}': must be reader/operator/admin", role);
+    }
+    let mut config = load_config();
+    let normalized = role.to_ascii_lowercase();
+    if let Some(entry) = config.auth.keys.iter_mut().find(|e| e.key == key) {
+        entry.role = normalized.clone();
+        tracing::info!(key = %key, role = %normalized, "updated existing role key");
+    } else {
+        config.auth.keys.push(KeyEntry {
+            key: key.clone(),
+            role: normalized.clone(),
+        });
+        tracing::info!(key = %key, role = %normalized, "added new role key");
+    }
+    save_config(&config)?;
+    println!(
+        "{} Role key added: {} = {}",
+        "✅".green(),
+        key.yellow(),
+        normalized.cyan()
+    );
+    if !config.auth.enabled {
+        println!(
+            "{} RBAC not enabled yet. Run `fusion config roles-enable on` to activate.",
+            "ℹ️".blue()
+        );
+    }
+    Ok(())
+}
+
+fn roles_remove(key: String) -> Result<()> {
+    let mut config = load_config();
+    let before = config.auth.keys.len();
+    config.auth.keys.retain(|e| e.key != key);
+    if config.auth.keys.len() == before {
+        println!("{} No matching role key for: {}", "⚠️".red(), key.yellow());
+        return Ok(());
+    }
+    save_config(&config)?;
+    tracing::info!(key = %key, "removed role key");
+    println!("{} Role key removed: {}", "✅".green(), key.yellow());
+    Ok(())
+}
+
+async fn roles_enable(state: String) -> Result<()> {
+    let enabled = match state.to_ascii_lowercase().as_str() {
+        "on" | "true" | "1" | "enable" => true,
+        "off" | "false" | "0" | "disable" => false,
+        _ => anyhow::bail!("invalid state '{}': use on/off", state),
+    };
+    let mut config = load_config();
+    config.auth.enabled = enabled;
+    save_config(&config)?;
+    tracing::info!(enabled, "toggled RBAC");
+    if enabled && config.auth.keys.is_empty() {
+        println!(
+            "{} RBAC enabled, but no role keys set. Only mlx.api-key (admin) will pass operator/admin commands.",
+            "⚠️".yellow()
+        );
+        println!("   Add keys: `fusion config roles-add <key> <role>`");
+    } else {
+        println!(
+            "{} RBAC {}",
+            "✅".green(),
+            if enabled {
+                "enabled".green()
+            } else {
+                "disabled".red()
+            }
+        );
+    }
+    Ok(())
+}
+
+// 密钥轮换: 生成 32 字节随机 hex key, 旧 key→key_previous (24h 宽限回滚), 当前→新,
+// 盖时间戳 key_rotated_at。无 rand crate 依赖 — 用 std::collections::RandomState
+// (SipHash, OS 熵种子) 取 8 字节再 hex, 循环 4 次拼 64 hex 字符 (256-bit)。
+fn random_hex_key() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    let mut out = String::with_capacity(64);
+    for _ in 0..4 {
+        let mut hasher = RandomState::new().build_hasher();
+        // 混入纳秒时间戳增加时序熵 (RandomState 本身已 OS-entropy, 此为额外)。
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as u64)
+            .unwrap_or(0);
+        hasher.write_u64(nanos);
+        let v = hasher.finish();
+        out.push_str(&format!("{:016x}", v));
+    }
+    out
+}
+
+// #52 backpressure 配置读写 helper: backpressure 是 Option, 缺段用默认。
+fn bp_get<F: FnOnce(&crate::utils::backpressure::BackpressureConfig) -> String>(
+    config: &FusionConfig,
+    f: F,
+) -> String {
+    match &config.backpressure {
+        Some(bp) => f(bp),
+        None => f(&crate::utils::backpressure::BackpressureConfig::default()),
+    }
+}
+
+fn bp_set<F: FnOnce(&mut crate::utils::backpressure::BackpressureConfig) -> Result<()>>(
+    config: &mut FusionConfig,
+    f: F,
+) -> Result<()> {
+    let bp = config
+        .backpressure
+        .get_or_insert_with(crate::utils::backpressure::BackpressureConfig::default);
+    f(bp)
+}
+
+fn rotate_key() -> Result<()> {
+    let mut config = load_config();
+    let old_key = config.mlx.api_key.clone();
+    if old_key.is_empty() {
+        anyhow::bail!("mlx.api-key is empty; set an initial key before rotating");
+    }
+    let new_key = random_hex_key();
+    config.mlx.key_previous = old_key;
+    config.mlx.api_key = new_key.clone();
+    config.mlx.key_rotated_at = chrono::Utc::now().to_rfc3339();
+    save_config(&config)?;
+    tracing::info!(rotated_at = %config.mlx.key_rotated_at, "rotated MLX api key");
+    println!("{} Rotated MLX API key.", "✅".green());
+    println!("  {} new key: {}", "🔑".cyan(), new_key.yellow());
+    println!(
+        "  {} old key retained in mlx.key_previous for 24h rollback grace window.",
+        "ℹ️".blue()
+    );
+    println!("  Update the gateway to accept the new key, then remove the old key after 24h.");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_default_auth_disabled() {
+        let config = FusionConfig::default();
+        assert!(!config.auth.enabled);
+        assert!(config.auth.keys.is_empty());
+    }
+
+    #[test]
+    fn test_auth_section_parses() {
+        let toml = r#"
+[auth]
+enabled = true
+[[auth.keys]]
+key = "op-token-1"
+role = "operator"
+[[auth.keys]]
+key = "reader-token-1"
+role = "reader"
+"#;
+        let cfg: FusionConfig = toml::from_str(toml).expect("auth section must parse");
+        assert!(cfg.auth.enabled);
+        assert_eq!(cfg.auth.keys.len(), 2);
+        assert_eq!(cfg.auth.keys[0].role, "operator");
+        assert_eq!(cfg.auth.keys[1].role, "reader");
+    }
+
+    #[test]
+    fn test_auth_absent_defaults_disabled() {
+        let toml = "[mlx]\nbase_url = \"http://x\"\n";
+        let cfg: FusionConfig = toml::from_str(toml).expect("config without auth must parse");
+        assert!(!cfg.auth.enabled);
+        assert!(cfg.auth.keys.is_empty());
+    }
 
     #[test]
     fn test_default_mlx_uses_gateway_port() {
@@ -646,5 +1016,54 @@ api_key = "remote-key"
         let toml = "[mlx\nbase_url = \"x\"";
         let res: Result<FusionConfig, _> = toml::from_str(toml);
         assert!(res.is_err(), "malformed TOML must fail parse");
+    }
+
+    // #49: key_rotated_at / key_previous 默认空, 老配置缺字段不阻断解析。
+    #[test]
+    fn test_mlx_key_rotation_fields_default_empty() {
+        let config = FusionConfig::default();
+        assert!(config.mlx.key_rotated_at.is_empty());
+        assert!(config.mlx.key_previous.is_empty());
+    }
+
+    #[test]
+    fn test_mlx_key_rotation_parses() {
+        let toml = r#"
+[mlx]
+base_url = "http://localhost:11432"
+api_key = "newkey"
+key_rotated_at = "2026-09-01T00:00:00Z"
+key_previous = "oldkey"
+"#;
+        let cfg: FusionConfig = toml::from_str(toml).expect("rotation fields must parse");
+        assert_eq!(cfg.mlx.api_key, "newkey");
+        assert_eq!(cfg.mlx.key_previous, "oldkey");
+        assert_eq!(cfg.mlx.key_rotated_at, "2026-09-01T00:00:00Z");
+    }
+
+    // 随机 key 生成: 64 hex 字符 (256-bit), 两次调用几乎不可能相同 (不要求严格唯一,
+    // 仅要求足够熵防爆破; 两次同值概率可忽略)。
+    #[test]
+    fn test_random_hex_key_length_and_format() {
+        let k = random_hex_key();
+        assert_eq!(k.len(), 64);
+        assert!(k.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    // #50: encrypt_secrets 默认 false (向后兼容老明文配置)。
+    #[test]
+    fn test_encrypt_secrets_default_off() {
+        let config = FusionConfig::default();
+        assert!(!config.auth.encrypt_secrets);
+    }
+
+    #[test]
+    fn test_encrypt_secrets_parses() {
+        let toml = r#"
+[auth]
+encrypt_secrets = true
+"#;
+        let cfg: FusionConfig = toml::from_str(toml).expect("encrypt_secrets must parse");
+        assert!(cfg.auth.encrypt_secrets);
     }
 }

@@ -15,6 +15,8 @@ pub enum AuditCommands {
     },
     /// 显示审计日志路径
     Path,
+    /// #51 校验审计日志 hash chain 完整性 (防篡改)
+    Verify,
 }
 
 pub async fn handle_audit(action: AuditCommands) -> Result<()> {
@@ -27,6 +29,27 @@ pub async fn handle_audit(action: AuditCommands) -> Result<()> {
                 crate::utils::audit::audit_path_display().cyan()
             );
             Ok(())
+        }
+        AuditCommands::Verify => {
+            println!(
+                "{} Verifying audit hash chain at {}",
+                "🔗".bold(),
+                crate::utils::audit::audit_path_display().cyan()
+            );
+            match crate::utils::audit::verify_chain() {
+                Ok(()) => {
+                    println!(
+                        "{} Audit chain intact — no tampering detected.",
+                        "✅".green().bold()
+                    );
+                    Ok(())
+                }
+                Err(e) => {
+                    println!("{} Audit chain BROKEN: {}", "❌".red().bold(), e);
+                    println!("     Records above the break may be corrupted or modified in place.");
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }

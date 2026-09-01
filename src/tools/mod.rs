@@ -13,6 +13,10 @@ impl ToolExecutor {
         tools.insert("model_info".to_string(), Box::new(ModelInfoTool));
         tools.insert("health".to_string(), Box::new(HealthTool));
         tools.insert("bench_speed".to_string(), Box::new(BenchSpeedTool));
+        // G2 扩工具: 只读 kb_query/service_status + 有副作用 model_pull。
+        tools.insert("kb_query".to_string(), Box::new(KbQueryTool));
+        tools.insert("service_status".to_string(), Box::new(ServiceStatusTool));
+        tools.insert("model_pull".to_string(), Box::new(ModelPullTool));
         Self { tools }
     }
 
@@ -109,6 +113,65 @@ impl Tool for BenchSpeedTool {
     }
 }
 
+// G2: 只读知识库查询 — 调 service::kb::query。
+struct KbQueryTool;
+
+#[async_trait::async_trait]
+impl Tool for KbQueryTool {
+    async fn execute(&self, args: &HashMap<String, String>) -> Result<String> {
+        let kb_id = args
+            .get("kb_id")
+            .ok_or_else(|| anyhow::anyhow!("Missing 'kb_id' argument"))?;
+        let question = args
+            .get("question")
+            .ok_or_else(|| anyhow::anyhow!("Missing 'question' argument"))?;
+        let top_k: usize = match args.get("top_k") {
+            None => 3,
+            Some(v) => v
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid top_k '{}', expected integer", v))?,
+        };
+        let data = crate::service::kb::query(kb_id, question, top_k).await?;
+        Ok(serde_json::to_string_pretty(&data)?)
+    }
+}
+
+// G2: 只读生态服务健康检查 — 调 service::health::check_named。
+struct ServiceStatusTool;
+
+#[async_trait::async_trait]
+impl Tool for ServiceStatusTool {
+    async fn execute(&self, args: &HashMap<String, String>) -> Result<String> {
+        let name = args
+            .get("name")
+            .ok_or_else(|| anyhow::anyhow!("Missing 'name' argument"))?;
+        let status = crate::service::health::check_named(name).await?;
+        Ok(serde_json::to_string_pretty(&serde_json::json!({
+            "name": status.name,
+            "url": status.url,
+            "alive": status.alive,
+            "port": status.port,
+            "latency_ms": status.latency_ms,
+        }))?)
+    }
+}
+
+// G2: 有副作用模型拉取 — 调 service::modelhub::download_model (占网络/磁盘)。
+struct ModelPullTool;
+
+#[async_trait::async_trait]
+impl Tool for ModelPullTool {
+    async fn execute(&self, args: &HashMap<String, String>) -> Result<String> {
+        let name = args
+            .get("name")
+            .ok_or_else(|| anyhow::anyhow!("Missing 'name' argument"))?;
+        let path = crate::service::modelhub::download_model(name).await?;
+        Ok(serde_json::to_string_pretty(&serde_json::json!({
+            "model": name, "path": path, "pulled": true,
+        }))?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +183,10 @@ mod tests {
         assert!(exec.is_known("model_info"));
         assert!(exec.is_known("health"));
         assert!(exec.is_known("bench_speed"));
+        // G2 扩工具
+        assert!(exec.is_known("kb_query"));
+        assert!(exec.is_known("service_status"));
+        assert!(exec.is_known("model_pull"));
     }
 
     #[test]
@@ -133,7 +200,7 @@ mod tests {
     fn test_list_tools_is_sorted_and_complete() {
         let exec = ToolExecutor::new();
         let names = exec.list_tools();
-        assert_eq!(names.len(), 4);
+        assert_eq!(names.len(), 7);
         assert_eq!(names, {
             let mut v = names.to_vec();
             v.sort();

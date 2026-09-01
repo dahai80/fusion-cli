@@ -176,7 +176,7 @@ fusion completions zsh
 | `agent <prompt> --permission=ask` | 危险操作前询问（默认） |
 | `agent <prompt> --permission=auto` | 完全自动 |
 
-**可用工具**：`list_models`、`model_info`、`health`、`bench_speed`
+**可用工具**：`list_models`、`model_info`、`health`、`bench_speed`、`kb_query`、`service_status`、`model_pull`。sandbox 层仅放行只读工具（`list_models`、`model_info`、`health`、`kb_query`、`service_status`）；有副作用的工具（`bench_speed`、`model_pull`）在 sandbox 层被禁，在 `ask` 层需确认。
 
 ### 知识库（`fusion kb`）
 
@@ -227,7 +227,9 @@ fusion completions zsh
 | `list` | 列出自动化模板（API 或回退） |
 | `run <name>` | 执行自动化模板 |
 | `history [--limit=20]` | 查看任务执行历史 |
-| `cron <name> --rule="0 21 * * *"` | 定时任务 |
+| `cron <name> --rule="0 21 * * *"` | 定时任务（持久化到 `~/.fusion/cron.json`） |
+| `cron-list` | 列出已持久化的定时任务 |
+| `cron-rm <name>` | 删除已持久化的定时任务 |
 | `stop --task-id=<id>` | 停止运行中任务 |
 
 ### 文档服务（`fusion doc`）
@@ -392,6 +394,18 @@ fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*`
 | Fusion-Bench | `http://localhost:11467` | `bench.base_url` |
 | Fusion-MultiNode | `http://localhost:11452` | `multinode.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
+
+---
+
+## 🚦 发布策略
+
+`fusion` 二进制通过分阶段金丝雀 → beta → stable 渠道流水线发布，配备人工审核的晋升门禁与文档化的回滚流程。此为 CI/CD 层职责（GitHub Actions 发布工作流），非 CLI 源码。
+
+- **渠道**：`stable`（`vX.Y.Z`）、`canary`（`canary-v…-日期-SHA`）、`beta`（`vX.Y.Z-beta.N`）。用户通过 `FUSION_RELEASE_CHANNEL` 或 Homebrew formula（`@stable` / `@canary` / `@beta`）选择渠道。
+- **门禁**：CI 必须全绿；候选标签无未关闭的 `regression`/`bug` issue；`cargo deny` 通过；至少一名金丝雀用户报告 `fusion doctor` + `fusion audit verify` 干净。
+- **回滚**：绝不移动标签 —— 通过切一个补丁回退标签向前回滚，并将分发渠道重新指向最近一个已知良好版本。
+
+完整规范：[`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md)（英文）。
 
 ---
 

@@ -93,16 +93,32 @@ fn apply_auth(builder: reqwest::RequestBuilder, urls: &ServiceUrls) -> reqwest::
 pub async fn health_check() -> Result<bool> {
     let client = get_client();
     let urls = service_urls();
-    let base = urls.mlx_base();
-    let url = format!("{}/health", base);
-    let req = apply_auth(client.get(&url), &urls);
-    match req.timeout(Duration::from_secs(2)).send().await {
-        Ok(resp) => Ok(resp.status().is_success()),
-        Err(e) => {
-            info!("MLX health check failed: {}", e);
-            Ok(false)
+    // HA: 有 failover 候选时按序探测, 任一存活即 true; 无候选走主 (旧行为)。
+    let candidates = urls.mlx_base_candidates();
+    if candidates.len() <= 1 {
+        let base = urls.mlx_base();
+        let url = format!("{}/health", base);
+        let req = apply_auth(client.get(&url), &urls);
+        return match req.timeout(Duration::from_secs(2)).send().await {
+            Ok(resp) => Ok(resp.status().is_success()),
+            Err(e) => {
+                info!("MLX health check failed: {}", e);
+                Ok(false)
+            }
+        };
+    }
+    for base in &candidates {
+        let url = format!("{}/health", base);
+        let req = apply_auth(client.get(&url), &urls);
+        match req.timeout(Duration::from_secs(2)).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                info!(base = %base, "MLX health check ok (failover candidate)");
+                return Ok(true);
+            }
+            _ => continue,
         }
     }
+    Ok(false)
 }
 
 pub async fn list_models() -> Result<Vec<ModelInfo>> {
@@ -119,15 +135,20 @@ pub async fn list_models() -> Result<Vec<ModelInfo>> {
 }
 
 pub async fn chat_completion(request: &InferenceRequest) -> Result<InferenceResponse> {
+    // #52 backpressure: 限流 + 熔断门, fail-fast 避免后端宕机时每命令等满 120s。
+    crate::utils::backpressure::mlx_admit().map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let client = get_client();
     let urls = service_urls();
     let url = format!("{}/chat/completions", urls.mlx_api());
     info!(url = %url, model = %request.model, "Sending chat completion request");
-    let resp = apply_auth(client.post(&url), &urls)
+    let send_result = apply_auth(client.post(&url), &urls)
         .json(request)
         .timeout(Duration::from_secs(120))
         .send()
-        .await?;
+        .await;
+    let success = send_result.is_ok();
+    crate::utils::backpressure::mlx_report(success);
+    let resp = send_result?;
     let response = parse_completion_response(resp).await?;
     Ok(response)
 }
@@ -346,21 +367,26 @@ fn aggregate_sse_to_response(raw: &str) -> Result<InferenceResponse> {
 }
 
 pub async fn chat_completion_stream(request: &InferenceRequest) -> Result<reqwest::Response> {
+    crate::utils::backpressure::mlx_admit().map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let mut stream_request = request.clone();
     stream_request.stream = Some(true);
     let client = get_client();
     let urls = service_urls();
     let url = format!("{}/chat/completions", urls.mlx_api());
     info!(url = %url, model = %stream_request.model, "Sending streaming chat request");
-    let resp = apply_auth(client.post(&url), &urls)
+    let send_result = apply_auth(client.post(&url), &urls)
         .json(&stream_request)
         .timeout(Duration::from_secs(120))
         .send()
-        .await?;
+        .await;
+    let success = send_result.is_ok();
+    crate::utils::backpressure::mlx_report(success);
+    let resp = send_result?;
     Ok(resp)
 }
 
 pub async fn create_embedding(model: &str, input: &str) -> Result<Vec<f64>> {
+    crate::utils::backpressure::mlx_admit().map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let client = get_client();
     let urls = service_urls();
     let url = format!("{}/embeddings", urls.mlx_api());
@@ -368,11 +394,14 @@ pub async fn create_embedding(model: &str, input: &str) -> Result<Vec<f64>> {
         "model": model,
         "input": input,
     });
-    let resp = apply_auth(client.post(&url), &urls)
+    let send_result = apply_auth(client.post(&url), &urls)
         .json(&payload)
         .timeout(Duration::from_secs(30))
         .send()
-        .await?;
+        .await;
+    let success = send_result.is_ok();
+    crate::utils::backpressure::mlx_report(success);
+    let resp = send_result?;
     let data: serde_json::Value = super::json_or_error(resp, "MLX").await?;
     let embedding: Vec<f64> = serde_json::from_value(data["data"][0]["embedding"].clone())?;
     Ok(embedding)

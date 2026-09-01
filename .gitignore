@@ -1,6 +1,7 @@
 # Rust
 target/
-Cargo.lock
+# #53 依赖锁固化: bin crate 必须提交 Cargo.lock 保证可复现构建。
+# (仅 library crate 才忽略 lock; 本项目是 single-binary, 故提交。)
 
 # Python
 __pycache__/
@@ -18,4 +19,5 @@ __pycache__/
 
 # Logs
 *.log
-*.gzCLAUDE.md
+*.gz
+CLAUDE.md
