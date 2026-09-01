@@ -13,7 +13,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "fusion")]
-#[command(version = "0.2.8")]
+#[command(version = "0.3.0")]
 #[command(about = "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.", long_about = None)]
 struct Cli {
     /// 强制离线模式（默认开启）
@@ -154,8 +154,22 @@ enum Commands {
         action: cmd::net::NetCommands,
     },
 
+    // ── 记忆中心 ──
+    /// 记忆管理（对接 fusion-memory fm-server: status/search/count/commit/delete/audit）
+    Memory {
+        #[command(subcommand)]
+        action: cmd::memory::MemoryCommands,
+    },
+
+    // ── 评测服务 ──
+    /// 评测服务管理（对接 fusion-bench HTTP: status/tasks/suites/results/baselines/gates）
+    Eval {
+        #[command(subcommand)]
+        action: cmd::benchsvc::EvalCommands,
+    },
+
     // ── 模型同步 ──
-    /// 模型同步（对接 Fusion-Multi-Node）
+    /// 模型同步（对接 fusion-multi-node Master）
     Sync {
         #[command(subcommand)]
         action: cmd::sync::SyncCommands,
@@ -264,6 +278,12 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Net { action }) => {
             cmd::net::handle_net(action).await?;
+        }
+        Some(Commands::Memory { action }) => {
+            cmd::memory::handle_memory(action).await?;
+        }
+        Some(Commands::Eval { action }) => {
+            cmd::benchsvc::handle_eval(action).await?;
         }
         Some(Commands::Sync { action }) => {
             cmd::sync::handle_sync(action).await?;

@@ -5,6 +5,54 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-01
+
+### Added
+- `fusion memory` subcommand group — HTTP client to fusion-memory `fm-server`
+  (port 11435, Bearer auth). Routes source: `crates/fm-server/src/http.rs`.
+  - `fusion memory status` — alive + API version (`/healthz`, `/v1/memory/version`).
+  - `fusion memory version` — API version (public endpoint).
+  - `fusion memory search <query> [--top-k=N]` — semantic retrieve (`/v1/memory/retrieve`).
+  - `fusion memory count` — total entries (`/v1/memory/count`).
+  - `fusion memory get <id>` — fetch one (`/v1/memory/:id`).
+  - `fusion memory commit <content> [--scope=...]` — write (`/v1/memory/commit`).
+  - `fusion memory consolidate` — short→long (`/v1/memory/consolidate`).
+  - `fusion memory delete <id>` — delete with `confirm:true` (`/v1/memory/delete`).
+  - `fusion memory audit` — audit log (`/v1/memory/audit`).
+  - Auth: Bearer from `memory.api-key` (config). Default empty → `auth_header()`
+    returns `None`, only public endpoints (healthz, version) work unauthenticated.
+    Set `fusion config set memory.api-key <key>` for commit/retrieve/delete/etc.
+- `fusion eval` subcommand group — HTTP client to fusion-bench service
+  (port 11467, `/api/v1/*`). Distinct from `fusion bench speed/mem/ctx/auto`
+  (local MLX self-benchmark): `fusion eval` queries the bench server.
+  - `fusion eval status` — service health (`/api/v1/system/health`).
+  - `fusion eval resources` — CPU/GPU/mem (`/api/v1/system/resources`).
+  - `fusion eval tasks` / `eval task <id>` — task list/detail (`/api/v1/tasks`).
+  - `fusion eval suites` — suite list (`/api/v1/suites`).
+  - `fusion eval result <task_id>` — result (`/api/v1/results/:id`).
+  - `fusion eval trend` — results trend (`/api/v1/results/trend`).
+  - `fusion eval baselines` / `eval gates` — baselines + quality gates.
+- `fusion cluster` rewritten — now hits fusion-multi-node Master (11452) via
+  `service/multinode.rs` (was wrongly routing to the MLX gateway → 404).
+  - `fusion cluster status` — `/api/cluster/status`.
+  - `fusion cluster nodes` / `node <id>` / `remove <id>` — `/api/nodes*`.
+  - `fusion cluster pending` / `approve <id> [--approved-by]` / `reject <id> [--reason]`.
+  - `fusion cluster routing` — `/api/routing/summary`.
+- `fusion sync` rewritten — same fix, routes to Master 11452 not gateway:
+  - `fusion sync manifest <model>` — `/api/models/:name/manifest`.
+  - `fusion sync incremental <model> [--source=...]` — `POST /api/sync/incremental`.
+- Config: new sections `[memory]` (base_url, api_key), `[bench]` (base_url),
+  `[multinode]` (base_url). Default ports 11435/11467/11452. New config keys:
+  `memory.base-url`, `memory.api-key`, `bench.base-url`, `multinode.base-url`.
+- `service/health.rs`: `check_all_with_latency` now probes Memory/Bench/MultiNode.
+- 13 new unit tests (config +3, memory +6, benchsvc +4). Test count 51 → 63.
+
+### Changed
+- `fusion sync`/`fusion cluster` no longer route through the MLX gateway — bug
+  fix: old `get_base_url()` returned `ServiceUrls.mlx` (gateway 11432) then
+  appended `/api/cluster/*`, hitting routes the gateway does not serve (404).
+  Real routes live on the multi-node Master at 11452.
+
 ## [0.2.8] - 2026-09-01
 
 ### Added
@@ -139,6 +187,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial `fusion` single-binary CLI (Rust 2024 edition, clap derive).
 
+[0.3.0]: https://github.com/dahai80/fusion-cli/releases/tag/v0.3.0
 [0.2.6]: https://github.com/dahai80/fusion-cli/releases/tag/v0.2.6
 [0.2.5]: https://github.com/dahai80/fusion-cli/releases/tag/v0.2.5
 [0.2.4]: https://github.com/dahai80/fusion-cli/releases/tag/v0.2.4

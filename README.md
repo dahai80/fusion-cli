@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.8-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.0-blue" alt="Version">
 </p>
 
 ---
@@ -261,6 +261,55 @@ Thin forwarding to the fusion-supervisor daemon over UDS (JSON-RPC 2.0, socket `
 | `restart <service>` | Restart a named service |
 | `ping` | Probe supervisor daemon (alive check) |
 
+### Memory Service (`fusion memory`)
+
+HTTP client to fusion-memory `fm-server` (port 11435, Bearer auth). Public endpoints (`healthz`, `version`) work without a key; set `fusion config set memory.api-key <key>` for retrieve/commit/delete/etc.
+
+| Command | Description |
+|---------|-------------|
+| `status` | Service alive + API version |
+| `version` | fm-server API version |
+| `search <query> [--top-k=5]` | Semantic retrieve of memories |
+| `count` | Total memory entries |
+| `get <id>` | Fetch a single memory by ID |
+| `commit <content> [--scope=...]` | Write a memory |
+| `consolidate` | Trigger short→long consolidation |
+| `delete <id>` | Delete a memory (confirm enforced) |
+| `audit` | Show memory audit log |
+
+### Eval Service (`fusion eval`)
+
+HTTP client to fusion-bench service (port 11467, `/api/v1/*`). Distinct from `fusion bench speed/mem/ctx/auto` (local MLX self-benchmark): `fusion eval` queries the bench server for tasks, suites, results, baselines, and quality gates.
+
+| Command | Description |
+|---------|-------------|
+| `status` | Service health |
+| `resources` | CPU/GPU/memory resources |
+| `tasks` | List bench tasks |
+| `task <task_id>` | Task detail |
+| `suites` | List bench suites |
+| `result <task_id>` | Evaluation result |
+| `trend` | Results trend |
+| `baselines` | List baselines |
+| `gates` | List quality gates |
+
+### Cluster & Sync (`fusion cluster` / `fusion sync`)
+
+Manage and sync with a fusion-multi-node Master (port 11452). Both now route to the Master directly (previously hit the MLX gateway by mistake → 404).
+
+| Command | Description |
+|---------|-------------|
+| `cluster status` | Cluster status |
+| `cluster nodes` | List registered nodes |
+| `cluster node <id>` | Node detail |
+| `cluster remove <id>` | Remove a node |
+| `cluster pending` | List pending nodes |
+| `cluster approve <id> [--approved-by]` | Approve a pending node |
+| `cluster reject <id> [--reason]` | Reject a pending node |
+| `cluster routing` | Routing summary |
+| `sync manifest <model>` | Fetch a model manifest from Master |
+| `sync incremental <model> [--source=...]` | Incremental model sync |
+
 ---
 
 ## 🔧 Architecture
@@ -284,10 +333,12 @@ src/
 │   ├── rag.rs           # fusion rag
 │   ├── doc.rs           # fusion doc (start/stop/status/log)
 │   ├── desk.rs          # fusion desk (real API calls)
-│   ├── sync.rs          # fusion sync (model sync)
+│   ├── sync.rs          # fusion sync (model sync via multi-node Master)
 │   ├── guard.rs         # fusion guard (UDS JSON-RPC status/rules/audit)
 │   ├── net.rs           # fusion net (forward to fusion-supervisor UDS)
-│   └── cluster.rs       # fusion cluster
+│   ├── memory.rs        # fusion memory (fm-server HTTP client)
+│   ├── benchsvc.rs      # fusion eval (fusion-bench HTTP client)
+│   └── cluster.rs       # fusion cluster (multi-node Master)
 ├── service/             # Unified service layer
 │   ├── mod.rs           # Global reqwest::Client + ServiceUrls + check_url()
 │   ├── mlx.rs           # MLX inference client (chat, stream, embed, bench, health)
@@ -299,6 +350,9 @@ src/
 │   ├── gateway.rs       # Gateway client (service discovery) (V0.2.1)
 │   ├── guard.rs         # Guard UDS client (JSON-RPC ping, rule.list, audit.list)
 │   ├── sv.rs            # Supervisor UDS client (JSON-RPC ping/status/up/down/restart)
+│   ├── memory.rs        # fm-server client (retrieve/commit/delete/audit, Bearer)
+│   ├── benchsvc.rs      # fusion-bench client (tasks/suites/results/gates/baselines)
+│   ├── multinode.rs     # multi-node Master client (nodes/cluster/routing/sync)
 │   └── health.rs        # Unified health check (check_all, check_all_with_latency)
 ├── tui/                 # TUI dashboard (V0.2.1)
 │   ├── mod.rs           # Event loop + terminal setup
@@ -333,6 +387,10 @@ fusion-mlx inference routes through the gateway (`http://localhost:11432`, OpenA
 | Fusion-RAG | `http://localhost:11436` | `rag.base_url` |
 | Fusion-Desk | `http://localhost:9000` | `desk.base_url` |
 | Fusion-Doc | `http://localhost:11449` | `doc.base_url` |
+| Fusion-Memory | `http://localhost:11435` | `memory.base_url` |
+| Fusion-Memory API key | _(no default)_ | `memory.api_key` |
+| Fusion-Bench | `http://localhost:11467` | `bench.base_url` |
+| Fusion-MultiNode | `http://localhost:11452` | `multinode.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
 
 ---
@@ -375,6 +433,13 @@ fusion-mlx inference routes through the gateway (`http://localhost:11432`, OpenA
 - [x] Service health with latency detection (`check_all_with_latency`)
 - [x] Watch mode (`fusion service status --watch=N`) — auto-refresh every N seconds
 - [x] Dashboard service start/stop from TUI (s/x keys)
+
+### V0.3 ✅
+- [x] `fusion memory` — fusion-memory fm-server client (status/version/search/count/get/commit/consolidate/delete/audit)
+- [x] `fusion eval` — fusion-bench HTTP service client (status/resources/tasks/suites/results/trend/baselines/gates)
+- [x] `fusion cluster`/`fusion sync` rewritten to route to multi-node Master (11452), not the gateway
+- [x] Health checks probe Memory/Bench/MultiNode
+- [x] Config sections `[memory]`/`[bench]`/`[multinode]`
 
 ### V0.4 (Future)
 - [ ] Distributed node management

@@ -1,11 +1,14 @@
+pub mod benchsvc;
 pub mod desk;
 pub mod doc;
 pub mod gateway;
 pub mod guard;
 pub mod health;
 pub mod kb;
+pub mod memory;
 pub mod mlx;
 pub mod modelhub;
+pub mod multinode;
 pub mod rag;
 pub mod sv;
 
@@ -38,6 +41,10 @@ pub struct ServiceUrls {
     pub rag: String,
     pub desk: String,
     pub doc: String,
+    pub memory: String,
+    pub memory_api_key: String,
+    pub bench: String,
+    pub multinode: String,
 }
 
 impl ServiceUrls {
@@ -51,6 +58,10 @@ impl ServiceUrls {
             rag: config.rag.base_url.clone(),
             desk: config.desk.base_url.clone(),
             doc: config.doc.base_url.clone(),
+            memory: config.memory.base_url.clone(),
+            memory_api_key: config.memory.api_key.clone(),
+            bench: config.bench.base_url.clone(),
+            multinode: config.multinode.base_url.clone(),
         }
     }
 

@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.8-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.0-blue" alt="Version">
 </p>
 
 ---
@@ -261,6 +261,55 @@ fusion completions zsh
 | `restart <service>` | 重启指定服务 |
 | `ping` | 探活 supervisor 守护进程 |
 
+### 记忆服务（`fusion memory`）
+
+对接 fusion-memory `fm-server` 的 HTTP 客户端（端口 11435，Bearer 鉴权）。公开端点（`healthz`、`version`）无需密钥；检索/写入/删除等操作需先 `fusion config set memory.api-key <key>`。
+
+| 命令 | 说明 |
+|---------|-------------|
+| `status` | 服务存活 + API 版本 |
+| `version` | fm-server API 版本 |
+| `search <query> [--top-k=5]` | 语义检索记忆 |
+| `count` | 记忆条目总数 |
+| `get <id>` | 按 ID 取单条记忆 |
+| `commit <content> [--scope=...]` | 写入一条记忆 |
+| `consolidate` | 触发短期→长期巩固 |
+| `delete <id>` | 删除记忆（强制 confirm） |
+| `audit` | 查看记忆审计日志 |
+
+### 评测服务（`fusion eval`）
+
+对接 fusion-bench 服务的 HTTP 客户端（端口 11467，`/api/v1/*`）。与 `fusion bench speed/mem/ctx/auto`（本地直测 MLX）不同：`fusion eval` 查询评测服务端的任务、套件、结果、基线与质量门。
+
+| 命令 | 说明 |
+|---------|-------------|
+| `status` | 服务健康状态 |
+| `resources` | CPU/GPU/内存资源 |
+| `tasks` | 任务列表 |
+| `task <task_id>` | 任务详情 |
+| `suites` | 套件列表 |
+| `result <task_id>` | 评测结果 |
+| `trend` | 结果趋势 |
+| `baselines` | 基线列表 |
+| `gates` | 质量门列表 |
+
+### 集群与同步（`fusion cluster` / `fusion sync`）
+
+管理与同步 fusion-multi-node Master（端口 11452）。两者现已直连 Master（此前误连 MLX 网关 → 404）。
+
+| 命令 | 说明 |
+|---------|-------------|
+| `cluster status` | 集群状态 |
+| `cluster nodes` | 列出已注册节点 |
+| `cluster node <id>` | 节点详情 |
+| `cluster remove <id>` | 移除节点 |
+| `cluster pending` | 待审批节点列表 |
+| `cluster approve <id> [--approved-by]` | 批准待审批节点 |
+| `cluster reject <id> [--reason]` | 拒绝待审批节点 |
+| `cluster routing` | 路由汇总 |
+| `sync manifest <model>` | 从 Master 拉取模型清单 |
+| `sync incremental <model> [--source=...]` | 增量模型同步 |
+
 ---
 
 ## 🔧 架构
@@ -284,10 +333,12 @@ src/
 │   ├── rag.rs           # fusion rag
 │   ├── doc.rs           # fusion doc（start/stop/status/log）
 │   ├── desk.rs          # fusion desk（真实 API 调用）
-│   ├── sync.rs          # fusion sync（模型同步）
+│   ├── sync.rs          # fusion sync（经 multi-node Master 同步）
 │   ├── guard.rs         # fusion guard（UDS JSON-RPC status/rules/audit）
 │   ├── net.rs           # fusion net（转发 fusion-supervisor UDS）
-│   └── cluster.rs       # fusion cluster
+│   ├── memory.rs        # fusion memory（fm-server HTTP 客户端）
+│   ├── benchsvc.rs      # fusion eval（fusion-bench HTTP 客户端）
+│   └── cluster.rs       # fusion cluster（multi-node Master）
 ├── service/             # 统一服务层
 │   ├── mod.rs           # 全局 reqwest::Client + ServiceUrls + check_url()
 │   ├── mlx.rs           # MLX 推理客户端（chat, stream, embed, bench, health）
@@ -299,6 +350,9 @@ src/
 │   ├── gateway.rs       # Gateway 客户端（服务发现）（V0.2.1）
 │   ├── guard.rs         # Guard UDS 客户端（JSON-RPC ping, rule.list, audit.list）
 │   ├── sv.rs            # Supervisor UDS 客户端（JSON-RPC ping/status/up/down/restart）
+│   ├── memory.rs        # fm-server 客户端（retrieve/commit/delete/audit, Bearer）
+│   ├── benchsvc.rs      # fusion-bench 客户端（tasks/suites/results/gates/baselines）
+│   ├── multinode.rs     # multi-node Master 客户端（nodes/cluster/routing/sync）
 │   └── health.rs        # 统一健康检查（check_all, check_all_with_latency）
 ├── tui/                 # TUI 仪表盘（V0.2.1）
 │   ├── mod.rs           # 事件循环 + 终端设置
@@ -333,6 +387,10 @@ fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*`
 | Fusion-RAG | `http://localhost:11436` | `rag.base_url` |
 | Fusion-Desk | `http://localhost:9000` | `desk.base_url` |
 | Fusion-Doc | `http://localhost:11449` | `doc.base_url` |
+| Fusion-Memory | `http://localhost:11435` | `memory.base_url` |
+| Fusion-Memory 密钥 | _(无默认值)_ | `memory.api_key` |
+| Fusion-Bench | `http://localhost:11467` | `bench.base_url` |
+| Fusion-MultiNode | `http://localhost:11452` | `multinode.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
 
 ---
@@ -375,6 +433,13 @@ fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*`
 - [x] 带延迟的服务健康检测（`check_all_with_latency`）
 - [x] Watch 模式（`fusion service status --watch=N`）— 每 N 秒自动刷新
 - [x] 仪表盘内服务启停（s/x 键）
+
+### V0.3 ✅
+- [x] `fusion memory` — fusion-memory fm-server 客户端（status/version/search/count/get/commit/consolidate/delete/audit）
+- [x] `fusion eval` — fusion-bench HTTP 服务客户端（status/resources/tasks/suites/results/trend/baselines/gates）
+- [x] `fusion cluster`/`fusion sync` 重写，直连 multi-node Master（11452），不再误连网关
+- [x] 健康检查新增 Memory/Bench/MultiNode 探测
+- [x] 配置段 `[memory]`/`[bench]`/`[multinode]`
 
 ### V0.4（未来）
 - [ ] 分布式节点管理
