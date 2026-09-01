@@ -1,10 +1,13 @@
 use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
-use tracing::{error, info};
+use tracing::error;
 
-use crate::service::{ServiceUrls, get_client};
+use crate::service::multinode as mn;
+use crate::utils::output;
 
+// 模型同步 — 对接 fusion-multi-node Master (11452), 非 MLX 网关。
+// 旧实现误打到 mlx.base_url/api/... (网关无此路由), 已修正直连 Master。
 #[derive(Subcommand)]
 pub enum SyncCommands {
     /// 获取模型同步清单
@@ -32,45 +35,36 @@ pub async fn handle_sync(action: SyncCommands) -> Result<()> {
 }
 
 async fn sync_manifest(model_name: String) -> Result<()> {
+    if output::is_json_mode() {
+        match mn::model_manifest(&model_name).await {
+            Ok(data) => output::print_json(&data)?,
+            Err(e) => {
+                error!(error = %e, "manifest request error");
+                anyhow::bail!("Failed to get manifest from multi-node Master: {}", e)
+            }
+        }
+        return Ok(());
+    }
+
     println!();
-    println!("{}", "📋 Model Sync Manifest".bold());
+    println!("{}", "📋 Model Sync Manifest (multi-node Master)".bold());
     println!("  Model: {}", model_name.cyan());
     println!();
 
-    let base_url = get_base_url();
-    let url = format!("{}/api/models/{}/manifest", base_url, model_name);
-    info!(url = %url, "Requesting model manifest");
-
-    let client = get_client();
-    let resp = client
-        .get(&url)
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await;
-
-    match resp {
-        Ok(resp) if resp.status().is_success() => {
-            let body = resp.text().await?;
-            info!(body = %body, "Manifest response received");
+    match mn::model_manifest(&model_name).await {
+        Ok(data) => {
             println!("  {} Manifest for '{}':", "✅".green(), model_name.cyan());
             println!();
-            match serde_json::from_str::<serde_json::Value>(&body) {
-                Ok(val) => println!("{}", serde_json::to_string_pretty(&val).unwrap_or(body)),
-                Err(_) => println!("{}", body),
-            }
-        }
-        Ok(resp) => {
-            let status = resp.status();
-            error!(status = %status, "Manifest request failed");
-            anyhow::bail!(
-                "Failed to get manifest for '{}': HTTP {}",
-                model_name,
-                status
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&data).unwrap_or_default()
             );
         }
         Err(e) => {
-            error!(error = %e, "Manifest request error");
-            anyhow::bail!("Failed to connect to fusion-mlx for manifest: {}", e);
+            error!(error = %e, "manifest request error");
+            println!("  {} multi-node Master not reachable: {}", "❌".red(), e);
+            println!("     Start Master: fusion-multi-node/start.sh (port 11452)");
+            anyhow::bail!("Failed to get manifest: {}", e);
         }
     }
 
@@ -78,67 +72,42 @@ async fn sync_manifest(model_name: String) -> Result<()> {
 }
 
 async fn sync_incremental(source: String, model_name: String) -> Result<()> {
+    if output::is_json_mode() {
+        match mn::sync_incremental(&source, &model_name).await {
+            Ok(data) => output::print_json(&data)?,
+            Err(e) => {
+                error!(error = %e, "incremental sync error");
+                anyhow::bail!("Incremental sync failed: {}", e)
+            }
+        }
+        return Ok(());
+    }
+
     println!();
-    println!("{}", "🔄 Incremental Sync".bold());
+    println!("{}", "🔄 Incremental Sync (multi-node Master)".bold());
     println!("  Model:  {}", model_name.cyan());
     println!("  Source: {}", source.cyan());
     println!();
 
-    let base_url = get_base_url();
-    let url = format!("{}/api/sync/incremental", base_url);
-    info!(url = %url, source = %source, model = %model_name, "Starting incremental sync");
-
-    let payload = serde_json::json!({
-        "model_name": model_name,
-        "source": source,
-    });
-
-    let client = get_client();
-    let resp = client
-        .post(&url)
-        .json(&payload)
-        .timeout(std::time::Duration::from_secs(30))
-        .send()
-        .await;
-
-    match resp {
-        Ok(resp) if resp.status().is_success() => {
-            let body = resp.text().await?;
-            info!(body = %body, "Incremental sync response received");
+    match mn::sync_incremental(&source, &model_name).await {
+        Ok(data) => {
             println!(
                 "  {} Incremental sync for '{}' completed.",
                 "✅".green(),
                 model_name.cyan()
             );
-            match serde_json::from_str::<serde_json::Value>(&body) {
-                Ok(val) => println!("{}", serde_json::to_string_pretty(&val).unwrap_or(body)),
-                Err(_) => println!("{}", body),
-            }
-        }
-        Ok(resp) => {
-            let status = resp.status();
-            error!(status = %status, "Incremental sync request failed");
-            anyhow::bail!(
-                "Incremental sync failed for '{}': HTTP {}",
-                model_name,
-                status
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&data).unwrap_or_default()
             );
         }
         Err(e) => {
-            error!(error = %e, "Incremental sync request error");
-            anyhow::bail!(
-                "Failed to connect to fusion-mlx for incremental sync: {}",
-                e
-            );
+            error!(error = %e, "incremental sync error");
+            println!("  {} multi-node Master not reachable: {}", "❌".red(), e);
+            println!("     Start Master: fusion-multi-node/start.sh (port 11452)");
+            anyhow::bail!("Incremental sync failed: {}", e);
         }
     }
 
     Ok(())
-}
-
-fn get_base_url() -> String {
-    ServiceUrls::from_config()
-        .mlx
-        .trim_end_matches('/')
-        .to_string()
 }

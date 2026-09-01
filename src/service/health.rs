@@ -50,6 +50,9 @@ pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
         ("RAG", &urls.rag, "/health"),
         ("Desk", &urls.desk, "/health"),
         ("Doc", &urls.doc, "/api/health"),
+        ("Memory", &urls.memory, "/healthz"),
+        ("Bench", &urls.bench, "/api/v1/system/health"),
+        ("MultiNode", &urls.multinode, "/api/health"),
     ];
 
     let mut results = Vec::new();

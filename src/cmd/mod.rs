@@ -1,4 +1,5 @@
 pub mod bench;
+pub mod benchsvc;
 pub mod chat;
 pub mod cluster;
 pub mod completions;
@@ -10,6 +11,7 @@ pub mod guard;
 pub mod init;
 pub mod kb;
 pub mod log;
+pub mod memory;
 pub mod model;
 pub mod net;
 pub mod rag;

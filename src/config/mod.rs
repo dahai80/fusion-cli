@@ -27,6 +27,9 @@ pub struct FusionConfig {
     pub rag: RagConfig,
     pub desk: DeskConfig,
     pub doc: DocConfig,
+    pub memory: MemoryConfig,
+    pub bench: BenchConfig,
+    pub multinode: MultinodeConfig,
     pub log: LogConfig,
     #[serde(default)]
     pub gateway: Option<GatewayConfig>,
@@ -90,6 +93,23 @@ pub struct DocConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MemoryConfig {
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BenchConfig {
+    pub base_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MultinodeConfig {
+    pub base_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LogConfig {
     pub level: String,
 }
@@ -131,6 +151,16 @@ impl Default for FusionConfig {
             },
             doc: DocConfig {
                 base_url: "http://localhost:11449".to_string(),
+            },
+            memory: MemoryConfig {
+                base_url: "http://localhost:11435".to_string(),
+                api_key: String::new(),
+            },
+            bench: BenchConfig {
+                base_url: "http://localhost:11467".to_string(),
+            },
+            multinode: MultinodeConfig {
+                base_url: "http://localhost:11452".to_string(),
             },
             log: LogConfig {
                 level: "info".to_string(),
@@ -191,7 +221,8 @@ fn list_config() -> Result<()> {
     println!(
         "    mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size,"
     );
-    println!("    modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, log.level");
+    println!("    modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, log.level,");
+    println!("    memory.base-url, memory.api-key, bench.base-url, multinode.base-url");
     Ok(())
 }
 
@@ -211,11 +242,15 @@ fn get_config(key: String) -> Result<()> {
         "rag.base-url" => config.rag.base_url.clone(),
         "desk.base-url" => config.desk.base_url.clone(),
         "doc.base-url" => config.doc.base_url.clone(),
+        "memory.base-url" => config.memory.base_url.clone(),
+        "memory.api-key" => config.memory.api_key.clone(),
+        "bench.base-url" => config.bench.base_url.clone(),
+        "multinode.base-url" => config.multinode.base_url.clone(),
         "log.level" => config.log.level.clone(),
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
             println!(
-                "  Available keys: model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, log.level"
+                "  Available keys: model.default-path, kb.default-path, kb.base-url, mlx.default-ctx, mlx.enable-cache, mlx.base-url, mlx.api-key, mlx.cache-size, mlx.max-batch-size, modelhub.base-url, rag.base-url, desk.base-url, doc.base-url, memory.base-url, memory.api-key, bench.base-url, multinode.base-url, log.level"
             );
             return Ok(());
         }
@@ -252,6 +287,10 @@ async fn set_config(key: String, value: String) -> Result<()> {
         "rag.base-url" => config.rag.base_url = value.clone(),
         "desk.base-url" => config.desk.base_url = value.clone(),
         "doc.base-url" => config.doc.base_url = value.clone(),
+        "memory.base-url" => config.memory.base_url = value.clone(),
+        "memory.api-key" => config.memory.api_key = value.clone(),
+        "bench.base-url" => config.bench.base_url = value.clone(),
+        "multinode.base-url" => config.multinode.base_url = value.clone(),
         "log.level" => config.log.level = value.clone(),
         _ => {
             println!("{} Unknown config key: {}", "❌".red(), key.cyan());
@@ -312,6 +351,21 @@ mod tests {
         assert_eq!(config.rag.base_url, "http://localhost:11436");
         assert_eq!(config.desk.base_url, "http://localhost:9000");
         assert_eq!(config.doc.base_url, "http://localhost:11449");
+    }
+
+    #[test]
+    fn test_default_new_service_ports() {
+        let config = FusionConfig::default();
+        assert_eq!(config.memory.base_url, "http://localhost:11435");
+        assert_eq!(config.bench.base_url, "http://localhost:11467");
+        assert_eq!(config.multinode.base_url, "http://localhost:11452");
+    }
+
+    #[test]
+    fn test_default_memory_api_key_empty() {
+        // fm-server B5: 未配 key 则 HTTP 拒启, 故 CLI 默认空 (auth_header → None, 仅用公开端点)。
+        let config = FusionConfig::default();
+        assert_eq!(config.memory.api_key, "");
     }
 
     #[test]
