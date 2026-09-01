@@ -7,6 +7,7 @@ pub mod kb;
 pub mod mlx;
 pub mod modelhub;
 pub mod rag;
+pub mod sv;
 
 use once_cell::sync::Lazy;
 use reqwest::Client;

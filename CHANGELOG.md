@@ -5,6 +5,28 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-09-01
+
+### Added
+- `fusion net` subcommand group (closes #13): thin forwarding to the
+  fusion-supervisor daemon over UDS (JSON-RPC 2.0, newline-framed, 5s timeout).
+  Socket defaults to `/tmp/fusion-sv.sock`, overridable via `FUSION_SV_SOCKET`.
+  - `fusion net up` → `up` → start all supervised services.
+  - `fusion net down` → `down` → stop all supervised services.
+  - `fusion net status` → `status` → service table (name, state, port).
+  - `fusion net restart <service>` → `restart` → restart a named service.
+  - `fusion net ping` → `ping` → daemon alive check.
+  - Optional token auth via `FUSION_SV_TOKEN` (forwarded in `params.token`,
+    matching supervisor's optional token check).
+  - Daemon-down exits with code 3 + `fusion-sv daemon` hint (matches `fusion-sv` CLI).
+- `service/sv.rs`: sync UDS client mirroring `service/guard.rs` pattern, with a
+  typed `SvError` (DaemonDown / Rpc / Other) so the command layer can map
+  daemon-down to exit 3 vs rpc-error to exit 1. Envelope mirrors
+  fusion-supervisor `src/rpc/schema.rs` (`id: i64`, `params: Value`).
+- 13 unit tests for sv wire framing (JSON-RPC envelope, result/error parsing,
+  status array, restart params, token injection pure fn, socket-path resolution,
+  error classification) — race-free, no env mutation. Test count 38 → 51.
+
 ## [0.2.7] - 2026-08-29
 
 ### Added

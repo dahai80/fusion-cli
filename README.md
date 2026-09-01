@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.2.7-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.8-blue" alt="Version">
 </p>
 
 ---
@@ -249,6 +249,18 @@ Read-only queries to the fusion-guard daemon over UDS (JSON-RPC 2.0, socket `/tm
 | `rules` | List current guard rule set + epoch |
 | `audit [--limit=20]` | Show recent guard audit events |
 
+### Service Orchestration (`fusion net`)
+
+Thin forwarding to the fusion-supervisor daemon over UDS (JSON-RPC 2.0, socket `/tmp/fusion-sv.sock`, override with `FUSION_SV_SOCKET`). Optional token auth via `FUSION_SV_TOKEN` (forwarded in `params.token`). Daemon-down exits with code 3 and a hint to run `fusion-sv daemon`.
+
+| Command | Description |
+|---------|-------------|
+| `up` | Start all supervised services |
+| `down` | Stop all supervised services |
+| `status` | List all services with state + port |
+| `restart <service>` | Restart a named service |
+| `ping` | Probe supervisor daemon (alive check) |
+
 ---
 
 ## 🔧 Architecture
@@ -274,6 +286,7 @@ src/
 │   ├── desk.rs          # fusion desk (real API calls)
 │   ├── sync.rs          # fusion sync (model sync)
 │   ├── guard.rs         # fusion guard (UDS JSON-RPC status/rules/audit)
+│   ├── net.rs           # fusion net (forward to fusion-supervisor UDS)
 │   └── cluster.rs       # fusion cluster
 ├── service/             # Unified service layer
 │   ├── mod.rs           # Global reqwest::Client + ServiceUrls + check_url()
@@ -285,6 +298,7 @@ src/
 │   ├── doc.rs           # Fusion-Doc client (health check, status detail)
 │   ├── gateway.rs       # Gateway client (service discovery) (V0.2.1)
 │   ├── guard.rs         # Guard UDS client (JSON-RPC ping, rule.list, audit.list)
+│   ├── sv.rs            # Supervisor UDS client (JSON-RPC ping/status/up/down/restart)
 │   └── health.rs        # Unified health check (check_all, check_all_with_latency)
 ├── tui/                 # TUI dashboard (V0.2.1)
 │   ├── mod.rs           # Event loop + terminal setup
