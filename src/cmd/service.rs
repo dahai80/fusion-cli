@@ -130,25 +130,51 @@ async fn service_start(service: Option<String>) -> Result<()> {
             if !json_mode {
                 println!("{} Starting all Fusion services...", "🚀".bold());
             }
-            start_mlx().await;
-            start_kb().await;
-            start_modelhub().await;
-            start_desk().await;
-            start_rag().await;
-            start_doc().await;
+            // 逐个服务返回是否真正启动 (true) 还是需人工 (false), 汇总必须诚实。
+            let results = [
+                ("mlx", start_mlx().await),
+                ("kb", start_kb().await),
+                ("modelhub", start_modelhub().await),
+                ("desk", start_desk().await),
+                ("rag", start_rag().await),
+                ("doc", start_doc().await),
+            ];
+            let started: Vec<&str> = results
+                .iter()
+                .filter(|(_, s)| *s)
+                .map(|(n, _)| *n)
+                .collect();
+            let manual: Vec<&str> = results
+                .iter()
+                .filter(|(_, s)| !*s)
+                .map(|(n, _)| *n)
+                .collect();
             if json_mode {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(
-                        &serde_json::json!({ "action": "start", "target": "all", "status": "dispatched" })
-                    )?
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "action": "start",
+                        "target": "all",
+                        "started": started,
+                        "manual_required": manual,
+                    }))?
                 );
             } else {
                 println!();
-                println!(
-                    "{} All services started. Use `fusion service status` to verify.",
-                    "✅".green()
-                );
+                if !started.is_empty() {
+                    println!("  {} Started: {}", "✅".green(), started.join(", "));
+                }
+                if !manual.is_empty() {
+                    println!(
+                        "  {} Manual start required: {}",
+                        "⚠️".yellow(),
+                        manual.join(", ")
+                    );
+                    println!(
+                        "     These services have no CLI-managed launcher; use their start.sh."
+                    );
+                }
+                println!("  Use `fusion service status` to verify.");
             }
         }
         Some("mlx") => {
@@ -192,22 +218,47 @@ async fn service_stop(service: Option<String>) -> Result<()> {
             if !json_mode {
                 println!("{} Stopping all Fusion services...", "⏹️".bold());
             }
-            stop_mlx().await;
-            stop_kb().await;
-            stop_modelhub().await;
-            stop_desk().await;
-            stop_rag().await;
-            stop_doc().await;
+            let results = [
+                ("mlx", stop_mlx().await),
+                ("kb", stop_kb().await),
+                ("modelhub", stop_modelhub().await),
+                ("desk", stop_desk().await),
+                ("rag", stop_rag().await),
+                ("doc", stop_doc().await),
+            ];
+            let stopped: Vec<&str> = results
+                .iter()
+                .filter(|(_, s)| *s)
+                .map(|(n, _)| *n)
+                .collect();
+            let manual: Vec<&str> = results
+                .iter()
+                .filter(|(_, s)| !*s)
+                .map(|(n, _)| *n)
+                .collect();
             if json_mode {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(
-                        &serde_json::json!({ "action": "stop", "target": "all", "status": "dispatched" })
-                    )?
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "action": "stop",
+                        "target": "all",
+                        "stopped": stopped,
+                        "manual_required": manual,
+                    }))?
                 );
             } else {
                 println!();
-                println!("{} All services stopped.", "✅".green());
+                if !stopped.is_empty() {
+                    println!("  {} Stopped: {}", "✅".green(), stopped.join(", "));
+                }
+                if !manual.is_empty() {
+                    println!(
+                        "  {} Manual stop required: {}",
+                        "⚠️".yellow(),
+                        manual.join(", ")
+                    );
+                    println!("     Try: pkill -f <service-name>");
+                }
             }
         }
         Some("mlx") | Some("fusion-mlx") => {
@@ -330,7 +381,9 @@ async fn service_log(service: Option<String>, lines: usize) -> Result<()> {
     Ok(())
 }
 
-async fn start_mlx() {
+// 启停辅助: 返回 true 表示 CLI 真正管理了该进程 (启动/停止成功或已在运行),
+// false 表示需要人工介入 (无脚本/二进制)。汇总据此诚实分类, 杜绝 "✅ All started" 造假。
+async fn start_mlx() -> bool {
     let urls = ServiceUrls::from_config();
     println!("  {} Starting fusion-mlx...", "⏳".blue());
     let start_script = dirs::home_dir()
@@ -342,8 +395,14 @@ async fn start_mlx() {
             .output()
             .await
         {
-            Ok(_) => println!("  {} fusion-mlx started ({})", "✅".green(), urls.mlx),
-            Err(e) => println!("  {} Failed to start fusion-mlx: {}", "❌".red(), e),
+            Ok(_) => {
+                println!("  {} fusion-mlx started ({})", "✅".green(), urls.mlx);
+                true
+            }
+            Err(e) => {
+                println!("  {} Failed to start fusion-mlx: {}", "❌".red(), e);
+                false
+            }
         }
     } else {
         println!(
@@ -351,78 +410,138 @@ async fn start_mlx() {
             "⚠️".yellow(),
             start_script.display()
         );
+        false
     }
 }
 
-async fn start_kb() {
+async fn start_kb() -> bool {
     let urls = ServiceUrls::from_config();
     println!("  {} Starting Fusion-KB...", "⏳".blue());
-    match kb::health_check().await {
-        Ok(true) => println!(
+    if kb::health_check().await.unwrap_or(false) {
+        println!(
             "  {} Fusion-KB already running ({})",
             "⚠️".yellow(),
             urls.kb
-        ),
-        _ => println!(
-            "  {} Fusion-KB start: {} (manual start required)",
-            "ℹ️".blue(),
-            urls.kb
-        ),
+        );
+        return true;
     }
+    // 尝试项目 start.sh (kb 有独立 start.sh)。
+    let script = dirs::home_dir()
+        .unwrap_or_default()
+        .join("fusion/fusion-kb/start.sh");
+    if script.exists() {
+        match tokio::process::Command::new(&script)
+            .arg("start")
+            .output()
+            .await
+        {
+            Ok(o) if o.status.success() => {
+                println!("  {} Fusion-KB started ({})", "✅".green(), urls.kb);
+                return true;
+            }
+            _ => {}
+        }
+    }
+    println!(
+        "  {} Fusion-KB start: {} (manual start required, no start.sh found)",
+        "ℹ️".blue(),
+        urls.kb
+    );
+    false
 }
 
-async fn start_modelhub() {
+async fn start_modelhub() -> bool {
     let urls = ServiceUrls::from_config();
     println!("  {} Starting Model-Hub...", "⏳".blue());
-    match modelhub::health_check().await {
-        Ok(true) => println!(
+    if modelhub::health_check().await.unwrap_or(false) {
+        println!(
             "  {} Model-Hub already running ({})",
             "⚠️".yellow(),
             urls.modelhub
-        ),
-        _ => println!(
-            "  {} Model-Hub start: {} (manual start required)",
-            "ℹ️".blue(),
-            urls.modelhub
-        ),
+        );
+        return true;
     }
+    let script = dirs::home_dir()
+        .unwrap_or_default()
+        .join("fusion/fusion-model-hub/start.sh");
+    if script.exists() {
+        match tokio::process::Command::new(&script)
+            .arg("start")
+            .output()
+            .await
+        {
+            Ok(o) if o.status.success() => {
+                println!("  {} Model-Hub started ({})", "✅".green(), urls.modelhub);
+                return true;
+            }
+            _ => {}
+        }
+    }
+    println!(
+        "  {} Model-Hub start: {} (manual start required, no start.sh found)",
+        "ℹ️".blue(),
+        urls.modelhub
+    );
+    false
 }
 
-async fn start_desk() {
+async fn start_desk() -> bool {
     let urls = ServiceUrls::from_config();
     println!("  {} Starting Fusion-Desk...", "⏳".blue());
-    match desk::health_check().await {
-        Ok(true) => println!(
+    if desk::health_check().await.unwrap_or(false) {
+        println!(
             "  {} Fusion-Desk already running ({})",
             "⚠️".yellow(),
             urls.desk
-        ),
-        _ => println!(
-            "  {} Fusion-Desk start: {} (manual start required)",
-            "ℹ️".blue(),
-            urls.desk
-        ),
+        );
+        return true;
     }
+    let script = dirs::home_dir()
+        .unwrap_or_default()
+        .join("fusion/fusion-cowork/start.sh");
+    if script.exists() {
+        match tokio::process::Command::new(&script)
+            .arg("start")
+            .output()
+            .await
+        {
+            Ok(o) if o.status.success() => {
+                println!("  {} Fusion-Desk started ({})", "✅".green(), urls.desk);
+                return true;
+            }
+            _ => {}
+        }
+    }
+    println!(
+        "  {} Fusion-Desk start: {} (manual start required, no start.sh found)",
+        "ℹ️".blue(),
+        urls.desk
+    );
+    false
 }
 
-async fn start_rag() {
+async fn start_rag() -> bool {
     let urls = ServiceUrls::from_config();
     println!("  {} Starting Fusion-RAG...", "⏳".blue());
-    match rag::health_check().await {
-        Ok(true) => println!(
+    if rag::health_check().await.unwrap_or(false) {
+        println!(
             "  {} Fusion-RAG already running ({})",
             "⚠️".yellow(),
             urls.rag
-        ),
-        _ => println!(
-            "  {} Fusion-RAG start: {} (manual start required)",
-            "ℹ️".blue(),
-            urls.rag
-        ),
+        );
+        return true;
+    }
+    // RAG 有真正的 PID 管理 (fusion-rag 二进制), 委托给 rag_start 处理。
+    match crate::cmd::rag::handle_rag(crate::cmd::rag::RagCommands::Start { port: 11436 }).await {
+        Ok(_) => true,
+        Err(e) => {
+            println!("  {} Fusion-RAG start failed: {}", "❌".red(), e);
+            false
+        }
     }
 }
 
-async fn stop_mlx() {
+async fn stop_mlx() -> bool {
     let start_script = dirs::home_dir()
         .unwrap_or_default()
         .join("claude-home/fusion-mlx/start.sh");
@@ -433,68 +552,123 @@ async fn stop_mlx() {
             .output()
             .await
         {
-            Ok(_) => println!("  {} fusion-mlx stopped", "✅".green()),
-            Err(e) => println!("  {} Failed to stop fusion-mlx: {}", "❌".red(), e),
+            Ok(_) => {
+                println!("  {} fusion-mlx stopped", "✅".green());
+                true
+            }
+            Err(e) => {
+                println!("  {} Failed to stop fusion-mlx: {}", "❌".red(), e);
+                false
+            }
         }
     } else {
         println!("  {} fusion-mlx stop script not found", "⚠️".yellow());
+        false
     }
 }
 
-async fn stop_kb() {
-    println!(
-        "  {} Fusion-KB stop: manual stop required (no PID management).",
-        "ℹ️".blue()
-    );
-    println!("     Try: pkill -f fusion-kb");
+async fn stop_kb() -> bool {
+    // 无 PID 管理, 尝试 pkill。
+    match tokio::process::Command::new("pkill")
+        .args(["-f", "fusion-kb"])
+        .output()
+        .await
+    {
+        Ok(o) if o.status.success() => {
+            println!("  {} Fusion-KB stopped (pkill)", "✅".green());
+            true
+        }
+        _ => {
+            println!(
+                "  {} Fusion-KB stop: not running or pkill failed (manual: pkill -f fusion-kb)",
+                "ℹ️".blue()
+            );
+            false
+        }
+    }
 }
 
-async fn stop_modelhub() {
-    println!(
-        "  {} Model-Hub stop: manual stop required (no PID management).",
-        "ℹ️".blue()
-    );
-    println!("     Try: pkill -f fusion-model-hub");
+async fn stop_modelhub() -> bool {
+    match tokio::process::Command::new("pkill")
+        .args(["-f", "fusion-model-hub"])
+        .output()
+        .await
+    {
+        Ok(o) if o.status.success() => {
+            println!("  {} Model-Hub stopped (pkill)", "✅".green());
+            true
+        }
+        _ => {
+            println!(
+                "  {} Model-Hub stop: not running or pkill failed (manual: pkill -f fusion-model-hub)",
+                "ℹ️".blue()
+            );
+            false
+        }
+    }
 }
 
-async fn stop_desk() {
-    println!(
-        "  {} Fusion-Desk stop: manual stop required (no PID management).",
-        "ℹ️".blue()
-    );
-    println!("     Try: pkill -f fusion-desk");
+async fn stop_desk() -> bool {
+    match tokio::process::Command::new("pkill")
+        .args(["-f", "fusion-desk"])
+        .output()
+        .await
+    {
+        Ok(o) if o.status.success() => {
+            println!("  {} Fusion-Desk stopped (pkill)", "✅".green());
+            true
+        }
+        _ => {
+            println!(
+                "  {} Fusion-Desk stop: not running or pkill failed (manual: pkill -f fusion-desk)",
+                "ℹ️".blue()
+            );
+            false
+        }
+    }
 }
 
-async fn stop_rag() {
-    println!(
-        "  {} Fusion-RAG: use `fusion rag stop` (PID-managed).",
-        "ℹ️".blue()
-    );
+async fn stop_rag() -> bool {
+    // RAG 有 PID 管理, 委托给 rag_stop。
+    match crate::cmd::rag::handle_rag(crate::cmd::rag::RagCommands::Stop).await {
+        Ok(_) => true,
+        Err(e) => {
+            println!("  {} Fusion-RAG stop failed: {}", "❌".red(), e);
+            false
+        }
+    }
 }
 
-async fn start_doc() {
+async fn start_doc() -> bool {
     let urls = ServiceUrls::from_config();
     println!("  {} Starting Fusion-Doc...", "⏳".blue());
-    match doc::health_check().await {
-        Ok(true) => println!(
+    if doc::health_check().await.unwrap_or(false) {
+        println!(
             "  {} Fusion-Doc already running ({})",
             "⚠️".yellow(),
             urls.doc
-        ),
-        _ => println!(
-            "  {} Fusion-Doc start: {} (use `fusion doc start`)",
-            "ℹ️".blue(),
-            urls.doc
-        ),
+        );
+        return true;
+    }
+    // Doc 有真正的 start.sh 管理, 委托给 doc_start。
+    match crate::cmd::doc::handle_doc(crate::cmd::doc::DocCommands::Start { port: 11449 }).await {
+        Ok(_) => true,
+        Err(e) => {
+            println!("  {} Fusion-Doc start failed: {}", "❌".red(), e);
+            false
+        }
     }
 }
 
-async fn stop_doc() {
-    println!(
-        "  {} Fusion-Doc stop: manual stop required (no PID management).",
-        "ℹ️".blue()
-    );
-    println!("     Try: pkill -f fusion-doc");
+async fn stop_doc() -> bool {
+    // Doc 有真正的 start.sh stop, 委托给 doc_stop。
+    match crate::cmd::doc::handle_doc(crate::cmd::doc::DocCommands::Stop).await {
+        Ok(_) => true,
+        Err(e) => {
+            println!("  {} Fusion-Doc stop failed: {}", "❌".red(), e);
+            false
+        }
+    }
 }
 
 #[derive(Tabled)]

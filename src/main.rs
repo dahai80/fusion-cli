@@ -201,25 +201,32 @@ enum Commands {
     Dashboard,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+// R6 修复: set_var 在多线程 tokio 运行时启动后执行是未定义行为 (glibc setenv 可能 free
+// 他人正在读的缓冲)。Rust 2024 将 set_var 标 unsafe 正因如此。改为在运行时建立前,
+// 即同步 main 入口处解析并设置 env, 之后所有 worker 线程读到的是稳定值。
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // 初始化日志
-    utils::logger::init_logger(cli.verbose);
-
-    // 设置输出格式
+    // 必须在 tokio 运行时启动前完成 env 写入, 杜绝与 worker 线程的并发读。
     if cli.format == "json" {
         unsafe {
             std::env::set_var("FUSION_OUTPUT_FORMAT", "json");
         }
     }
-
-    // 离线模式标记：下游（model pull / sync）读取此 env 决定是否允许外部网络。
     unsafe {
         std::env::set_var("FUSION_OFFLINE", if cli.offline { "1" } else { "0" });
     }
 
+    // 初始化日志 (同步, 安全)。
+    utils::logger::init_logger(cli.verbose);
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(async_main(cli))
+}
+
+async fn async_main(cli: Cli) -> anyhow::Result<()> {
     // 执行命令
     match cli.command {
         None => {

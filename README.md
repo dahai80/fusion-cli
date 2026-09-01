@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.3.2-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
 </p>
 
 ---
@@ -440,6 +440,21 @@ fusion-mlx inference routes through the gateway (`http://localhost:11432`, OpenA
 - [x] `fusion cluster`/`fusion sync` rewritten to route to multi-node Master (11452), not the gateway
 - [x] Health checks probe Memory/Bench/MultiNode
 - [x] Config sections `[memory]`/`[bench]`/`[multinode]`
+
+### V0.3.3 — Security & Reliability Hardening ✅
+- [x] `model pull` path traversal sealed (repo-id sanitize + canonicalize prefix check)
+- [x] `config.toml` permissions restricted to 0600 (holds gateway API key)
+- [x] Agent context trimming on all message types (token-budget cap, prevents window overflow)
+- [x] SSE non-streaming response incremental parsing (no whole-body buffering, bounded RSS)
+- [x] `service start/stop` honest started/manual-required summary
+- [x] Bench JSON purity + context-length stress in `bench_auto`
+- [x] Typed `check_url` retry (no retry on 4xx, exponential backoff on transient)
+- [x] TUI system-info single reused `System` instance (no per-tick process enumeration)
+- [x] Mtime-cached config with invalidation on save
+- [x] Env vars set before tokio runtime (no `set_var` race)
+- [x] `check_named` covers all 9 services; IPv6-safe `extract_port`
+- [x] Dead code removed (`OutputFormat`, `check_all`, `ContextManager::clear`); `LoopStats` wired in
+- [x] Test count 71 → 91 (risk-path coverage: path traversal, IPv6 port, context trim)
 
 ### V0.4 (Future)
 - [ ] Distributed node management

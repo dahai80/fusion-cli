@@ -183,10 +183,29 @@ pub fn get_config_path() -> PathBuf {
 pub fn load_config() -> FusionConfig {
     let path = get_config_path();
     if path.exists() {
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|content| toml::from_str(&content).ok())
-            .unwrap_or_default()
+        match std::fs::read_to_string(&path) {
+            Ok(content) => match toml::from_str::<FusionConfig>(&content) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    // 不再静默吞掉解析错误: 配置文件损坏会以默认值运行, 但必须留痕,
+                    // 否则用户改了 base_url 笔误 → 所有服务 "stopped" 却无任何线索。
+                    tracing::error!(
+                        path = %path.display(),
+                        error = %e,
+                        "Failed to parse config.toml, falling back to defaults"
+                    );
+                    FusionConfig::default()
+                }
+            },
+            Err(e) => {
+                tracing::error!(
+                    path = %path.display(),
+                    error = %e,
+                    "Failed to read config.toml, falling back to defaults"
+                );
+                FusionConfig::default()
+            }
+        }
     } else {
         FusionConfig::default()
     }
@@ -199,8 +218,28 @@ pub fn save_config(config: &FusionConfig) -> Result<()> {
     }
     let content = toml::to_string_pretty(config)?;
     std::fs::write(&path, content)?;
+    // 写入后让 service 层配置缓存失效, 下次 from_config 重新读盘。
+    crate::service::invalidate_config_cache();
+    // 收敛文件权限: config.toml 明文存 API key (mlx/memory/multinode), 必须 0600,
+    // 否则 umask 宽松环境下同机其他用户可读集群 token (R10)。
+    restrict_config_perms(&path);
     Ok(())
 }
+
+#[cfg(unix)]
+fn restrict_config_perms(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o600);
+        if let Err(e) = std::fs::set_permissions(path, perms) {
+            tracing::warn!(path = %path.display(), error = %e, "Failed to chmod 0600 config.toml");
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn restrict_config_perms(_path: &std::path::Path) {}
 
 pub async fn handle_config(action: ConfigCommands) -> Result<()> {
     match action {

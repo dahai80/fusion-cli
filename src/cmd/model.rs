@@ -171,13 +171,34 @@ async fn pull_model(name: &str, mirror: &str) -> Result<()> {
              Re-run with --offline=false to allow download."
         );
     }
+    // name 可能是 HF repo id (含 '/', 如 "mlx-community/Qwen2-7B")。
+    // 不能直接 join(name) — 会产生嵌套目录并允许 '../' 路径穿越逃出 models_dir。
+    // 派生安全本地名: 替换 '/' 为 '_', 再校验, 确保 target_dir 始终在 models_dir 之内。
+    let safe_name = name.replace('/', "_");
+    validate_model_name(&safe_name)?;
     let json_mode = is_json_mode();
     if !json_mode {
         println!("{} Pulling model: {}", "📥".bold(), name.cyan());
     }
 
     let models_dir = get_models_dir();
-    let target_dir = models_dir.join(name);
+    let target_dir = models_dir.join(&safe_name);
+    // 二次校验: canonicalize 后必须仍以 models_dir 为前缀, 防止符号链接绕过。
+    if target_dir.exists() {
+        let canonical_target = target_dir
+            .canonicalize()
+            .unwrap_or_else(|_| target_dir.clone());
+        let canonical_models = models_dir
+            .canonicalize()
+            .unwrap_or_else(|_| models_dir.clone());
+        if !canonical_target.starts_with(&canonical_models) {
+            anyhow::bail!(
+                "Refusing pull: resolved path '{}' escapes models directory '{}'",
+                canonical_target.display(),
+                canonical_models.display()
+            );
+        }
+    }
 
     if target_dir.exists() {
         let confirm = if json_mode {
@@ -512,18 +533,17 @@ async fn convert_model(source: &str, quant: &str) -> Result<()> {
                 .unwrap_or_default()
         }));
 
+    // E11 修复: 之前只检查 convert.py 是否存在却从不使用, 随后直接 python3 -m mlx_lm.convert。
+    // 现在若找到脚本则真正用它, 否则回退到 mlx_lm 模块, 不再做脱钩的空检查。
     let convert_script = mlx_path.join("convert.py");
-    if !convert_script.exists() {
-        let fallback_script = mlx_path.join("scripts").join("convert.py");
-        if !fallback_script.exists() {
-            anyhow::bail!(
-                "Conversion script not found at {} or {}.\n\
-                 Set FUSION_MLX_PATH or install fusion-mlx.",
-                convert_script.display(),
-                fallback_script.display()
-            );
-        }
-    }
+    let fallback_script = mlx_path.join("scripts").join("convert.py");
+    let script_path = if convert_script.exists() {
+        Some(convert_script)
+    } else if fallback_script.exists() {
+        Some(fallback_script)
+    } else {
+        None
+    };
 
     if !json_mode {
         println!("  {} Running conversion via fusion-mlx...", "⏳".blue());
@@ -532,23 +552,46 @@ async fn convert_model(source: &str, quant: &str) -> Result<()> {
 
     let hf_endpoint =
         std::env::var("HF_ENDPOINT").unwrap_or_else(|_| "https://hf-mirror.com".to_string());
-    let output = run_with_timeout(
-        "python3",
-        &[
-            "-m",
-            "mlx_lm.convert",
-            "--hf-path",
-            source,
-            "--quantize",
-            quant,
-            "--mlx-path",
-            &get_models_dir().join(&output_name).to_string_lossy(),
-        ],
-        &[("HF_ENDPOINT", hf_endpoint)],
-        1800,
-        "mlx_lm.convert",
-    )
-    .await;
+    let output = match &script_path {
+        Some(path) => {
+            run_with_timeout(
+                "python3",
+                &[
+                    path.to_string_lossy().as_ref(),
+                    "--hf-path",
+                    source,
+                    "--quantize",
+                    quant,
+                    "--mlx-path",
+                    &get_models_dir().join(&output_name).to_string_lossy(),
+                ],
+                &[("HF_ENDPOINT", hf_endpoint)],
+                1800,
+                "convert.py",
+            )
+            .await
+        }
+        None => {
+            // 无脚本 → 回退到已安装的 mlx_lm 模块 (官方推荐路径)。
+            run_with_timeout(
+                "python3",
+                &[
+                    "-m",
+                    "mlx_lm.convert",
+                    "--hf-path",
+                    source,
+                    "--quantize",
+                    quant,
+                    "--mlx-path",
+                    &get_models_dir().join(&output_name).to_string_lossy(),
+                ],
+                &[("HF_ENDPOINT", hf_endpoint)],
+                1800,
+                "mlx_lm.convert",
+            )
+            .await
+        }
+    };
 
     match output {
         Ok(out) if out.status.success() => {
@@ -853,4 +896,53 @@ struct ModelEntry {
     size: String,
     #[tabled(rename = "Format")]
     quant: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // E1 回归: validate_model_name 必须拦死路径穿越, 否则 join(name) 逃出 models_dir。
+    #[test]
+    fn test_validate_model_name_rejects_traversal() {
+        assert!(validate_model_name("../etc/passwd").is_err());
+        assert!(validate_model_name("org/../../sensitive").is_err());
+        assert!(validate_model_name("..").is_err());
+        assert!(validate_model_name(".").is_err());
+        assert!(validate_model_name("").is_err());
+        assert!(validate_model_name("/").is_err());
+        assert!(validate_model_name("\\").is_err());
+        assert!(validate_model_name(".hidden").is_err());
+    }
+
+    #[test]
+    fn test_validate_model_name_accepts_safe_ids() {
+        assert!(validate_model_name("Qwen2-7B").is_ok());
+        // pull_model 已把 '/' 替换为 '_', 校验对象是 safe_name。
+        assert!(validate_model_name("mlx-community_Qwen2-7B").is_ok());
+        assert!(validate_model_name("org_model-7b-4bit").is_ok());
+    }
+
+    // E1: pull_model 派生 safe_name 必须消除 '/' 的穿越能力。
+    #[test]
+    fn test_pull_safe_name_neutralizes_slash_traversal() {
+        // 模拟 pull_model 中 name.replace('/', "_") 的防御逻辑。
+        let evil = "org/../../sensitive";
+        let safe = evil.replace('/', "_");
+        // 派生后不再含 '/' → join 不会嵌套, 校验应拒绝 '..' 残留。
+        assert!(!safe.contains('/'));
+        assert!(
+            validate_model_name(&safe).is_err(),
+            "must still reject '..' residue: {}",
+            safe
+        );
+    }
+
+    #[test]
+    fn test_pull_safe_name_normal_repo_id() {
+        let repo = "mlx-community/Qwen2-7B";
+        let safe = repo.replace('/', "_");
+        assert_eq!(safe, "mlx-community_Qwen2-7B");
+        assert!(validate_model_name(&safe).is_ok());
+    }
 }

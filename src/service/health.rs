@@ -12,35 +12,6 @@ pub struct ServiceStatus {
     pub latency_ms: Option<u64>,
 }
 
-#[allow(dead_code)]
-pub async fn check_all() -> Result<Vec<ServiceStatus>> {
-    let urls = ServiceUrls::from_config();
-    let checks: Vec<(&str, &str)> = vec![
-        ("MLX", &urls.mlx),
-        ("KB", &urls.kb),
-        ("ModelHub", &urls.modelhub),
-        ("RAG", &urls.rag),
-        ("Desk", &urls.desk),
-        ("Doc", &urls.doc),
-    ];
-
-    let mut results = Vec::new();
-    for (name, url) in checks {
-        let health_url = format!("{}/health", url.trim_end_matches('/'));
-        info!(service = %name, url = %health_url, "Checking service health");
-        let alive = super::check_url(&health_url, 2).await;
-        let port = extract_port(url);
-        results.push(ServiceStatus {
-            name: name.to_string(),
-            url: url.to_string(),
-            alive,
-            port,
-            latency_ms: None,
-        });
-    }
-    Ok(results)
-}
-
 pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
     let urls = ServiceUrls::from_config();
     let checks: Vec<(&str, &str, &str)> = vec![
@@ -62,7 +33,12 @@ pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
         async move {
             info!(service = %name, url = %health_url, "Checking service health with latency");
             let start = std::time::Instant::now();
-            let alive = super::check_url(&health_url, 2).await;
+            // MultiNode 跨机, 网络抖动常态 → 1 次重试; 本地服务单发即止。
+            let alive = if name == "MultiNode" {
+                super::check_url_with_retry(&health_url, 2, 1).await
+            } else {
+                super::check_url(&health_url, 2).await
+            };
             let elapsed = start.elapsed();
             let latency_ms = if alive {
                 Some(elapsed.as_millis() as u64)
@@ -85,23 +61,35 @@ pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
 
 pub async fn check_named(name: &str) -> Result<ServiceStatus> {
     let urls = ServiceUrls::from_config();
-    let (svc_name, svc_url) = match name.to_lowercase().as_str() {
-        "mlx" => ("MLX", urls.mlx.clone()),
-        "kb" => ("KB", urls.kb.clone()),
-        "modelhub" => ("ModelHub", urls.modelhub.clone()),
-        "rag" => ("RAG", urls.rag.clone()),
-        "desk" => ("Desk", urls.desk.clone()),
-        "doc" => ("Doc", urls.doc.clone()),
+    // E8 修复: check_named 之前只覆盖 6 个旧服务, 漏掉 Memory/Bench/MultiNode,
+    // 导致 doctor 与 service status 对同名服务存活判断不一致。现统一 9 服务并各自带正确 health 路径。
+    let (svc_name, svc_url, health_path) = match name.to_lowercase().as_str() {
+        "mlx" => ("MLX", urls.mlx.clone(), "/health"),
+        "kb" => ("KB", urls.kb.clone(), "/kb/bases"),
+        "modelhub" | "model-hub" => ("ModelHub", urls.modelhub.clone(), "/v1/models"),
+        "rag" => ("RAG", urls.rag.clone(), "/health"),
+        "desk" => ("Desk", urls.desk.clone(), "/health"),
+        "doc" => ("Doc", urls.doc.clone(), "/api/health"),
+        "memory" => ("Memory", urls.memory.clone(), "/healthz"),
+        "bench" => ("Bench", urls.bench.clone(), "/api/v1/system/health"),
+        "multinode" | "multi-node" => ("MultiNode", urls.multinode.clone(), "/api/health"),
         _ => anyhow::bail!("Unknown service: {}", name),
     };
-    let health_url = format!("{}/health", svc_url.trim_end_matches('/'));
+    let health_url = format!("{}{}", svc_url.trim_end_matches('/'), health_path);
+    let start = std::time::Instant::now();
     let alive = super::check_url(&health_url, 2).await;
+    let elapsed = start.elapsed();
+    let port = extract_port(&svc_url);
     Ok(ServiceStatus {
         name: svc_name.to_string(),
         url: svc_url,
         alive,
-        port: 0,
-        latency_ms: None,
+        port,
+        latency_ms: if alive {
+            Some(elapsed.as_millis() as u64)
+        } else {
+            None
+        },
     })
 }
 
@@ -116,9 +104,40 @@ pub fn format_status_table(statuses: &[ServiceStatus]) -> String {
 }
 
 fn extract_port(url: &str) -> u16 {
-    url.split(':')
-        .next_back()
-        .and_then(|s| s.trim_end_matches('/').split('/').next())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0)
+    // E7 修复: 旧实现 url.split(':').next_back() 对 IPv6 ([::1]:11434) 与带路径 URL 会错析。
+    // 用 reqwest::Url (reqwest 重导出 url crate) 解析, authority 取 port; 解析失败回退 0。
+    if let Ok(parsed) = reqwest::Url::parse(url)
+        && let Some(port) = parsed.port()
+    {
+        return port;
+    }
+    0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_port;
+
+    #[test]
+    fn test_extract_port_ipv4() {
+        assert_eq!(extract_port("http://localhost:11434"), 11434);
+        assert_eq!(extract_port("http://127.0.0.1:9000"), 9000);
+    }
+
+    #[test]
+    fn test_extract_port_ipv6() {
+        assert_eq!(extract_port("http://[::1]:11434"), 11434);
+        assert_eq!(extract_port("http://[::1]:11434/v1/models"), 11434);
+    }
+
+    #[test]
+    fn test_extract_port_with_path() {
+        assert_eq!(extract_port("http://node-1.local:11452/api/health"), 11452);
+    }
+
+    #[test]
+    fn test_extract_port_invalid() {
+        assert_eq!(extract_port("not-a-url"), 0);
+        assert_eq!(extract_port("http://localhost"), 0);
+    }
 }

@@ -37,7 +37,9 @@ pub struct Agent {
 impl Agent {
     pub fn new(config: AgentConfig) -> Self {
         let tools = ToolExecutor::new();
-        let context = context::ContextManager::new(config.max_turns);
+        // A5: 用配置中的 default_ctx 作为上下文 token 预算, 避免无界增长撞破 max_position_embeddings。
+        let mlx_ctx = crate::service::cached_config().mlx.default_ctx;
+        let context = context::ContextManager::new(config.max_turns).with_max_tokens(mlx_ctx);
         Self {
             config,
             context,
@@ -52,6 +54,8 @@ impl Agent {
 
         let mut turns = 0u32;
         let mut final_response = String::new();
+        // E2 接线: LoopStats 之前是全死脚手架, 现接入主循环记录调度统计。
+        let mut stats = loop_engine::LoopStats::new();
 
         loop {
             if turns >= self.config.max_turns {
@@ -121,6 +125,7 @@ impl Agent {
                     continue;
                 }
 
+                stats.record_tool_call();
                 info!(tool = %tc.tool_name, args = ?tc.args, "Executing tool");
                 match self.tools.execute(&tc.tool_name, &tc.args).await {
                     Ok(result) => {
@@ -138,8 +143,16 @@ impl Agent {
             }
 
             turns += 1;
+            stats.record_turn(
+                response
+                    .usage
+                    .as_ref()
+                    .map(|u| u.completion_tokens)
+                    .unwrap_or(0),
+            );
         }
 
+        info!(stats = %stats.summary(), "Agent loop finished");
         Ok(final_response)
     }
 }

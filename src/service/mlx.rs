@@ -149,8 +149,21 @@ pub async fn chat_completion(request: &InferenceRequest) -> Result<InferenceResp
 
 async fn parse_completion_response(resp: reqwest::Response) -> Result<InferenceResponse> {
     let status = resp.status();
-    let text = resp.text().await.unwrap_or_default();
+    // R1 修复: 旧实现 resp.text().await 把整流缓冲进 String 再逐行解析, 长生成
+    // (大 max_tokens) 会把全部 token 常驻内存, 抵消流式意义且 RSS 线性膨胀。
+    // 改为流式增量读取: 先 peek content-type / 首字节判断是否 SSE, 是则增量聚合,
+    // 否则按普通 JSON 解析 (仍需整体, 但非 SSE 路径 body 本就是一次性 JSON)。
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let is_sse = content_type.contains("text/event-stream");
+
     if !status.is_success() {
+        // 错误路径 body 通常小, 整体读出用于报错。
+        let text = resp.text().await.unwrap_or_default();
         info!(status = %status, body = %text.chars().take(300).collect::<String>(), "chat completion non-success");
         anyhow::bail!(
             "MLX request failed ({}): {}",
@@ -158,13 +171,115 @@ async fn parse_completion_response(resp: reqwest::Response) -> Result<InferenceR
             text.chars().take(200).collect::<String>()
         );
     }
+
+    if is_sse {
+        info!("gateway returned SSE stream for non-streaming request; aggregating incrementally");
+        return aggregate_sse_stream(resp).await;
+    }
+
+    // 非 SSE: 普通一次性 JSON 响应。仍需整体读 (JSON 不可增量解析),
+    // 但此路径 body 是单次 JSON 而非长 token 流, 不会 RSS 膨胀。
+    let text = resp.text().await?;
+    // 防御: 部分网关对 stream:false 也返 SSE 但 content-type 不标准 → 检测首内容。
     let trimmed = text.trim_start();
     if trimmed.starts_with("data:") || trimmed.starts_with("event:") {
-        info!("gateway returned SSE stream for non-streaming request; aggregating chunks");
+        info!("content-type not SSE but body looks like SSE; aggregating");
         return aggregate_sse_to_response(&text);
     }
     let response: InferenceResponse = serde_json::from_str(&text)?;
     Ok(response)
+}
+
+// R1: 流式增量聚合 SSE — 逐 chunk 读取 body, 解析完整 data: 行, 只保留 content 累加,
+// 不缓冲整流原文。内存占用 = content 字符串本身, 而非 raw SSE 字节。
+async fn aggregate_sse_stream(resp: reqwest::Response) -> Result<InferenceResponse> {
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut content = String::new();
+    let mut model = String::new();
+    let mut prompt_tokens = 0u32;
+    let mut completion_tokens = 0u32;
+    let mut finish_reason: Option<String> = None;
+    let mut line_buf = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result?;
+        line_buf.push_str(&String::from_utf8_lossy(&chunk));
+        // 按行处理已收到的完整行, 残余留在 line_buf。
+        while let Some(nl) = line_buf.find('\n') {
+            let line = line_buf[..nl].to_string();
+            line_buf = line_buf[nl + 1..].to_string();
+            let line = line.trim();
+            if !line.starts_with("data:") {
+                continue;
+            }
+            let data = line.trim_start_matches("data:").trim();
+            if data == "[DONE]" || data.is_empty() {
+                continue;
+            }
+            let chunk_json: serde_json::Value = match serde_json::from_str(data) {
+                Ok(v) => v,
+                Err(e) => {
+                    info!(data = %data, error = %e, "skipping malformed SSE chunk");
+                    continue;
+                }
+            };
+            if model.is_empty()
+                && let Some(m) = chunk_json.get("model").and_then(|v| v.as_str())
+            {
+                model = m.to_string();
+            }
+            if let Some(usage) = chunk_json.get("usage") {
+                if let Some(pt) = usage.get("prompt_tokens").and_then(|v| v.as_u64()) {
+                    prompt_tokens = pt as u32;
+                }
+                if let Some(ct) = usage.get("completion_tokens").and_then(|v| v.as_u64()) {
+                    completion_tokens = ct as u32;
+                }
+            }
+            if let Some(choices) = chunk_json.get("choices").and_then(|v| v.as_array()) {
+                for choice in choices {
+                    if let Some(delta) = choice.get("delta")
+                        && let Some(c) = delta.get("content").and_then(|v| v.as_str())
+                    {
+                        content.push_str(c);
+                    }
+                    if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str())
+                        && !fr.is_empty()
+                    {
+                        finish_reason = Some(fr.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    info!(
+        content_len = content.len(),
+        tokens = completion_tokens,
+        "aggregated SSE stream into single response"
+    );
+    Ok(InferenceResponse {
+        choices: vec![Choice {
+            message: ResponseMessage {
+                content: if content.is_empty() {
+                    None
+                } else {
+                    Some(content)
+                },
+            },
+            finish_reason: Some(finish_reason.unwrap_or_else(|| "stop".to_string())),
+        }],
+        usage: if prompt_tokens > 0 || completion_tokens > 0 {
+            Some(Usage {
+                prompt_tokens,
+                completion_tokens,
+                total_tokens: prompt_tokens + completion_tokens,
+            })
+        } else {
+            None
+        },
+    })
 }
 
 fn aggregate_sse_to_response(raw: &str) -> Result<InferenceResponse> {
