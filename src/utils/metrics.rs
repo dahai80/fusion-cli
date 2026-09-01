@@ -133,6 +133,93 @@ pub fn metrics_path_display() -> String {
         .unwrap_or_else(|| "(unresolvable)".to_string())
 }
 
+// Prometheus 0.0.4 文本 exposition 格式输出。
+// 供 node_exporter textfile collector 或 `fusion metrics export > metrics.prom` 采集。
+pub fn to_prometheus() -> String {
+    let snap = snapshot();
+    let mut out = String::new();
+    let counter = |name: &str, help: &str, val: u64| -> String {
+        format!("# HELP {name} {help}\n# TYPE {name} counter\n{name} {val}\n")
+    };
+    out.push_str(&counter(
+        "fusion_cli_requests_total",
+        "Total CLI inference requests.",
+        snap.request_count,
+    ));
+    out.push_str(&counter(
+        "fusion_cli_request_errors_total",
+        "Total CLI request errors.",
+        snap.request_error,
+    ));
+    out.push_str(&counter(
+        "fusion_cli_model_pulls_total",
+        "Total model pull operations.",
+        snap.model_pull_count,
+    ));
+    out.push_str(&counter(
+        "fusion_cli_kb_ingests_total",
+        "Total KB ingest operations.",
+        snap.kb_ingest_count,
+    ));
+    out.push_str(&counter(
+        "fusion_cli_bench_runs_total",
+        "Total benchmark runs.",
+        snap.bench_run_count,
+    ));
+    out.push_str(&counter(
+        "fusion_cli_service_ops_total",
+        "Total ecosystem service operations.",
+        snap.service_ops_count,
+    ));
+    // 延迟直方图 (le 桶累积计数, Prometheus histogram 约定)。
+    out.push_str("# HELP fusion_cli_latency_ms_bucket CLI operation latency histogram (ms).\n");
+    out.push_str("# TYPE fusion_cli_latency_ms_bucket histogram\n");
+    let buckets = [
+        (
+            "0-50",
+            50u64,
+            snap.latency_buckets_ms.get("0-50").copied().unwrap_or(0),
+        ),
+        (
+            "50-200",
+            200,
+            snap.latency_buckets_ms.get("50-200").copied().unwrap_or(0),
+        ),
+        (
+            "200-500",
+            500,
+            snap.latency_buckets_ms.get("200-500").copied().unwrap_or(0),
+        ),
+        (
+            "500-2000",
+            2000,
+            snap.latency_buckets_ms
+                .get("500-2000")
+                .copied()
+                .unwrap_or(0),
+        ),
+        (
+            "2000+",
+            u64::MAX,
+            snap.latency_buckets_ms.get("2000+").copied().unwrap_or(0),
+        ),
+    ];
+    let mut cum = 0u64;
+    for (_, le, count) in buckets {
+        cum += count;
+        let le_str = if le == u64::MAX {
+            "+Inf".to_string()
+        } else {
+            le.to_string()
+        };
+        out.push_str(&format!(
+            "fusion_cli_latency_ms_bucket{{le=\"{le_str}\"}} {cum}\n"
+        ));
+    }
+    out.push_str(&format!("fusion_cli_latency_ms_count {cum}\n"));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +248,16 @@ mod tests {
         let e = empty_snapshot();
         assert_eq!(e.request_count, 0);
         assert!(e.latency_buckets_ms.is_empty());
+    }
+
+    #[test]
+    fn test_to_prometheus_format_valid() {
+        let out = to_prometheus();
+        // 关键 exposition 约定: 每 metric 有 HELP + TYPE, counter/histogram 类型正确。
+        assert!(out.contains("# TYPE fusion_cli_requests_total counter"));
+        assert!(out.contains("# TYPE fusion_cli_latency_ms_bucket histogram"));
+        // 直方图必须有 +Inf 桶 + count。
+        assert!(out.contains("le=\"+Inf\""));
+        assert!(out.contains("fusion_cli_latency_ms_count"));
     }
 }

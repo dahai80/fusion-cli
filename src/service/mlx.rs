@@ -587,4 +587,51 @@ data: [DONE]
         let resp = aggregate_sse_to_response(&raw).unwrap();
         assert_eq!(resp.choices[0].finish_reason.as_deref(), Some("stop"));
     }
+
+    // 集成测试: 需真实 fusion-mlx 运行 + 已加载模型。默认 #[ignore] 不跑 (CI 无模型)。
+    // 运行: ~/claude-home/fusion-mlx/start.sh start, 然后 cargo test -- --ignored mlx_live
+    // 需先确认有已加载模型: ~/claude-home/fusion-mlx/start.sh status
+    #[tokio::test]
+    #[ignore]
+    async fn mlx_live_health_and_list() {
+        let alive = health_check().await.unwrap_or(false);
+        assert!(alive, "fusion-mlx 未运行 — 先 start.sh start");
+        let models = list_models().await.expect("list_models 失败");
+        assert!(!models.is_empty(), "无已加载模型 — 先加载模型再跑集成测试");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn mlx_live_chat_completion() {
+        let models = list_models().await.expect("list_models 失败");
+        let model = models
+            .first()
+            .expect("无已加载模型 — 先加载模型再跑集成测试");
+        let request = InferenceRequest {
+            model: model.id.clone(),
+            messages: vec![crate::service::mlx::Message {
+                role: "user".to_string(),
+                content: "Say only the word: ok".to_string(),
+            }],
+            temperature: Some(0.0),
+            max_tokens: Some(16),
+            stream: Some(false),
+        };
+        let resp = chat_completion(&request)
+            .await
+            .expect("chat_completion 失败 — 后端不可达或模型未加载");
+        let content = resp
+            .choices
+            .first()
+            .and_then(|c| c.message.content.clone())
+            .unwrap_or_default();
+        assert!(!content.is_empty(), "chat 返回空内容");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn mlx_live_backpressure_admits() {
+        // 真实推理路径应被 backpressure 放行 (Closed 态, 桶有余量)。
+        crate::utils::backpressure::mlx_admit().expect("backpressure 应放行首次推理");
+    }
 }

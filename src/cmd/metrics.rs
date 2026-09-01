@@ -12,6 +12,8 @@ pub enum MetricsCommands {
     Path,
     /// 以 JSON 输出快照 (便于外接 Prometheus exporter / 脚本采集)
     Json,
+    /// 以 Prometheus 0.0.4 exposition 格式输出 (供 node_exporter textfile collector)
+    Export,
 }
 
 pub async fn handle_metrics(action: MetricsCommands) -> Result<()> {
@@ -28,6 +30,11 @@ pub async fn handle_metrics(action: MetricsCommands) -> Result<()> {
         MetricsCommands::Json => {
             let snap = crate::utils::metrics::read_snapshot()?;
             println!("{}", serde_json::to_string_pretty(&snap)?);
+            Ok(())
+        }
+        MetricsCommands::Export => {
+            // Prometheus exposition 纯文本, 无 ANSI 着色 (采集器需纯文本)。
+            println!("{}", crate::utils::metrics::to_prometheus());
             Ok(())
         }
     }

@@ -5,6 +5,48 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Enterprise production-readiness — production-release gaps (round 4). Closes the
+4 in-repo gaps remaining after the v0.4.0 baseline (the other 2 are upstream:
+fusion-mlx#754 HA, fusion-gateway#150 multi-tenant isolation — filed, out of
+this repo's scope). 142 → 143 tests (+3 `#[ignore]` integration tests behind a
+flag). All gates green (fmt/test/clippy/deny).
+
+### Added — Release Pipeline
+- **Cross-platform CI build** (gap #1): the `build` job is now a macOS + Linux
+  matrix that uploads `fusion-darwin-arm64` and `fusion-linux-x86_64` release
+  artifacts on every CI pass — eliminating the macOS-only / no-artifact gap.
+- **Canary release workflow** (gap #2): `.github/workflows/release-canary.yml`
+  triggers on CI completion of `main` (via `workflow_run`), cross-builds, and
+  publishes a prerelease GitHub Release tagged
+  `canary-v{VERSION}-{DATE}-{SHA}` — landing the canary pipeline defined in
+  `docs/RELEASE_STRATEGY.md`. Injection-safe: only `GITHUB_SHA`/`head_sha`
+  appear in `run:` steps.
+- **Stable/beta release workflow** (gap #2): `.github/workflows/release.yml`
+  triggers on `v*` (stable) and `v*-beta.*` (beta) tag pushes, runs the full
+  CI gate (check/fmt/clippy/deny) on the tag, cross-builds + stages
+  `Cargo.lock` for reproducibility (#53), and publishes a GitHub Release
+  (stable = published, beta = prerelease) with auto-generated notes.
+
+### Added — Observability
+- **Prometheus exposition exporter** (gap #4): `fusion metrics export` emits
+  the process counters + latency histogram in Prometheus 0.0.4 text exposition
+  format (6 counters + cumulative `le` buckets 50/200/500/2000/+Inf + `_count`),
+  for the node_exporter textfile collector pattern.
+- **Alerting & SLO spec** (gap #5): `docs/ALERTING.md` — collection wiring
+  (textfile collector cron), metric reference, Prometheus alert rules (error
+  rate, P95 latency, circuit-breaker-open, audit-chain-broken), and the SLO
+  summary table.
+
+### Added — Integration Tests
+- **Live integration test suite** (gap #3): 3 `#[ignore]` tests in
+  `service/mlx.rs` — `mlx_live_health_and_list`, `mlx_live_chat_completion`,
+  `mlx_live_backpressure_admits` — run against a real fusion-mlx instance with
+  a loaded model via `cargo test -- --ignored mlx_live`. Excluded from the
+  default gate (no network/backend requirement) per the existing test
+  convention.
+
 ## [0.4.0] - 2026-09-01
 
 Enterprise production-readiness round 3 — completes all 10 blockers to

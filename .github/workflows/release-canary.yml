@@ -1,0 +1,93 @@
+# #54 金丝雀发布: 每次 push 到 main (CI 全绿后) 自动切 canary-* 预发布标签,
+# 附 macOS + Linux binary。prerelease=true, 不动 releases/latest, 不动 Homebrew formula。
+# 用户通过 FUSION_RELEASE_CHANNEL=canary 或 @canary formula 主动选择。
+# 详见 docs/RELEASE_STRATEGY.md。
+
+name: Release Canary
+
+on:
+  workflow_run:
+    # CI 全绿后才发 canary, 避免发破构建。
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  canary:
+    # 仅 CI 成功才发; CI 失败/取消跳过。
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: Canary Build & Publish
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: fusion-darwin-arm64
+          - os: ubuntu-latest
+            artifact: fusion-linux-x86_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 取 CI 触发那次 push 的 commit (workflow_run 的 head_sha), 而非默认 main HEAD。
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+      - run: cargo build --release
+
+      # 打包 binary 为带平台后缀的 tar.gz, 便于 release asset 命名规范。
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp target/release/fusion dist/${{ matrix.artifact }}
+          tar -C dist -czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-canary
+          path: ${{ matrix.artifact }}.tar.gz
+
+  publish:
+    name: Publish Canary Release
+    needs: canary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      # 下载全部平台产物。
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-canary'
+          merge-multiple: true
+          path: assets
+      # canary tag: canary-v{version}-{YYYYMMDD}-{SHORTSHA}
+      - name: Derive canary tag
+        id: tag
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          SHORTSHA=${GITHUB_SHA::7}
+          DATE=$(date -u +%Y%m%d)
+          echo "tag=canary-v${VERSION}-${DATE}-${SHORTSHA}" >> "$GITHUB_OUTPUT"
+          echo "name=Fusion CLI Canary ${VERSION} (${DATE} ${SHORTSHA})" >> "$GITHUB_OUTPUT"
+      - name: Create canary prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.name }}
+          prerelease: true
+          body: |
+            🧪 **Canary build** — bleeding edge, may regress.
+
+            Built from commit `${{ github.event.workflow_run.head_sha }}`.
+            Channel: `canary`. Install via `FUSION_RELEASE_CHANNEL=canary` or `@canary` formula.
+
+            See [docs/RELEASE_STRATEGY.md](docs/RELEASE_STRATEGY.md) for the promotion gates this must pass before reaching `stable`.
+          files: assets/*.tar.gz
