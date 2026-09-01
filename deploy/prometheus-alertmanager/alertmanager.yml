@@ -1,0 +1,52 @@
+# Alertmanager 路由 + 通知渠道 — fusion-cli 企业告警。
+# 部署前必改: webhook_urls / email / slack 通道填真实值。
+# severity 路由: critical → 立即通知 ( PagerDuty/电话 ); warning → 工作时间通知。
+
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ["alertname", "instance", "service"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: default
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: critical-pager
+      group_wait: 10s
+      repeat_interval: 1h
+    - matchers:
+        - severity = warning
+      receiver: warning-slack
+
+receivers:
+  - name: default
+    webhook_configs:
+      # TODO 替换为真实 webhook (运维值班渠道)。
+      - url: "http://127.0.0.1:5001/webhook"
+        send_resolved: true
+
+  - name: critical-pager
+    webhook_configs:
+      # TODO 替换为 PagerDuty / 电话值班 webhook。
+      - url: "http://127.0.0.1:5001/pagerduty"
+        send_resolved: true
+
+  - name: warning-slack
+    slack_configs:
+      # TODO 替换为真实 Slack incoming webhook URL (环境变量 SLACK_WEBHOOK_URL)。
+      - api_url: "${SLACK_WEBHOOK_URL}"
+        channel: "#fusion-alerts"
+        send_resolved: true
+        title: "[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}"
+        text: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\n{{ end }}"
+
+inhibit_rules:
+  # 节点宕机时抑制该节点上其他告警 (避免告警风暴)。
+  - source_matchers:
+      - alertname = NodeDown
+    target_matchers:
+      - service = fusion-cli
+    equal: ["instance"]

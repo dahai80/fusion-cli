@@ -1,0 +1,62 @@
+# Prometheus 告警规则 — fusion-cli 企业生产。
+# 规则定义详见 docs/ALERTING.md (SLO + 阈值依据)。
+
+groups:
+  - name: fusion-cli
+    rules:
+      - alert: FusionCliHighErrorRate
+        expr: |
+          sum(rate(fusion_cli_request_errors_total[5m]))
+          / clamp_min(sum(rate(fusion_cli_requests_total[5m])), 1)
+          > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          service: fusion-cli
+        annotations:
+          summary: "fusion-cli error rate > 5% on {{ $labels.instance }}"
+          description: "Over the last 5m, >5% of CLI requests errored. Check backend health (fusion doctor) and audit log (fusion audit verify)."
+
+      - alert: FusionCliHighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(fusion_cli_latency_ms_bucket[5m])) by (le, instance)
+          ) > 2000
+        for: 10m
+        labels:
+          severity: warning
+          service: fusion-cli
+        annotations:
+          summary: "fusion-cli P95 latency > 2s on {{ $labels.instance }}"
+          description: "P95 inference latency exceeds the 2s SLO. Likely backend saturation — check backpressure circuit breaker (fusion doctor)."
+
+      - alert: FusionCliBreakerLikelyOpen
+        expr: |
+          sum(rate(fusion_cli_requests_total[5m])) == 0
+          and sum(increase(fusion_cli_request_errors_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: critical
+          service: fusion-cli
+        annotations:
+          summary: "fusion-cli circuit breaker likely open on {{ $labels.instance }}"
+          description: "No successful requests + rising errors for 5m — backpressure breaker likely Open (backend down). Verify fusion-mlx running."
+
+      - alert: FusionCliAuditChainBroken
+        expr: fusion_cli_audit_chain_intact == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: fusion-cli
+        annotations:
+          summary: "fusion-cli audit chain BROKEN on {{ $labels.instance }}"
+          description: "audit.log tamper detected (hash chain broken). Investigate immediately — run `fusion audit view` for the break point."
+
+      - alert: NodeDown
+        expr: up{job="node_exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "node_exporter down on {{ $labels.instance }}"
+          description: "No scrape from node_exporter for 2m — node may be down or fusion metrics export cron broken."

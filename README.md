@@ -439,6 +439,45 @@ Full spec: [`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md).
 
 ---
 
+## 🏢 Enterprise Operations
+
+Beyond the code, enterprise production needs ops/legal/support deliverables.
+These ship as executable scripts + docs so operators run them directly:
+
+- **Load testing** — `scripts/load_test.sh [concurrency] [duration] [model]`:
+  concurrent workers hammer `fusion chat` for a duration, aggregate
+  requests/errors/latency/RPS, and check against the SLO (error rate < 5%).
+- **Monitoring stack** — `deploy/prometheus-alertmanager/`:
+  `docker-compose.yml` (Prometheus + Alertmanager + node_exporter + Grafana),
+  `prometheus.yml`, `rules/fusion-alerts.yml`, `alertmanager.yml` (channels to
+  fill). Wiring in [`docs/ALERTING.md`](docs/ALERTING.md).
+- **Backup & DR** — `scripts/backup.sh [keep]` tars `~/.fusion/` (config, KB,
+  RAG, audit, metrics), verifies integrity, rotates. Restore + RPO/RTO in
+  [`docs/BACKUP_DR.md`](docs/BACKUP_DR.md).
+- **SLA & support** — [`docs/ENTERPRISE_SLA.md`](docs/ENTERPRISE_SLA.md):
+  uptime/latency SLO tiers, support priority/response, escalation path,
+  remediation credits, customer responsibilities. Template — fill per contract.
+- **Compliance** — [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md): license posture
+  (cargo deny whitelist), security audit checklist, evidence-bundle commands,
+  data handling, sign-off table.
+- **Ops runbook** — [`docs/OPS_RUNBOOK.md`](docs/OPS_RUNBOOK.md): deployment
+  topology (single + multi-node target), daily ops, troubleshooting SOPs by
+  symptom, on-call escalation, pre-production checklist.
+
+### Enterprise readiness status
+
+| Layer | Status |
+|-------|--------|
+| fusion-cli (this repo) | ✅ v0.4.1 — 10 blockers + 4 release gaps closed |
+| Server-side HA | ⏫ fusion-mlx#754 open — blocks multi-node HA SLA |
+| Multi-tenant isolation | ⏫ fusion-gateway#150 open — blocks multi-tenant |
+| Ops / legal / support | ✅ deliverables shipped (scripts + docs above) |
+
+Single-tenant / single-node enterprise deployment is production-ready now.
+Multi-tenant HA awaits the 2 upstream issues.
+
+---
+
 ## 🛣️ Roadmap
 
 ### V0.1 (MVP) ✅

@@ -1,0 +1,32 @@
+# Prometheus 抓取配置 — fusion-cli 企业监控部署。
+# 配合 node_exporter textfile collector 采集 `fusion metrics export` 产物。
+# 用法: docker-compose up -d (见同目录 docker-compose.yml)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: fusion-prod
+
+rule_files:
+  - "rules/fusion-alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # node_exporter: 采集各节点 fusion CLI metrics (textfile collector 模式)。
+  # 每节点 cron: `fusion metrics export > /var/lib/node_exporter/textfile/fusion.prom`
+  - job_name: node_exporter
+    static_configs:
+      # 替换为实际节点 node_exporter 地址。
+      - targets: ["node-exporter:9100"]
+        labels:
+          tenant: prod
+
+  # Prometheus 自监控。
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
