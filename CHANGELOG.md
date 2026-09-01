@@ -5,7 +5,7 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.1] - 2026-09-01
 
 Enterprise production-readiness — production-release gaps (round 4). Closes the
 4 in-repo gaps remaining after the v0.4.0 baseline (the other 2 are upstream:
