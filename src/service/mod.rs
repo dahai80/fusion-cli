@@ -45,6 +45,7 @@ pub struct ServiceUrls {
     pub memory_api_key: String,
     pub bench: String,
     pub multinode: String,
+    pub multinode_api_key: String,
 }
 
 impl ServiceUrls {
@@ -62,6 +63,7 @@ impl ServiceUrls {
             memory_api_key: config.memory.api_key.clone(),
             bench: config.bench.base_url.clone(),
             multinode: config.multinode.base_url.clone(),
+            multinode_api_key: config.multinode.api_key.clone(),
         }
     }
 

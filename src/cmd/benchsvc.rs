@@ -50,10 +50,6 @@ pub async fn handle_eval(action: EvalCommands) -> Result<()> {
 }
 
 async fn eval_status() -> Result<()> {
-    println!();
-    println!("{}", "📊 Fusion-Bench Service Status".bold());
-    println!();
-
     let alive = bs::health_check().await.unwrap_or(false);
 
     if output::is_json_mode() {
@@ -65,6 +61,10 @@ async fn eval_status() -> Result<()> {
         output::print_json(&payload)?;
         return Ok(());
     }
+
+    println!();
+    println!("{}", "📊 Fusion-Bench Service Status".bold());
+    println!();
 
     let status = if alive {
         "✅ running".green().to_string()
@@ -111,9 +111,11 @@ async fn eval_status() -> Result<()> {
 }
 
 async fn eval_resources() -> Result<()> {
-    println!();
-    println!("{}", "🖥️  Bench System Resources".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "🖥️  Bench System Resources".bold());
+        println!();
+    }
     match bs::system_resources().await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -135,9 +137,11 @@ async fn eval_resources() -> Result<()> {
 }
 
 async fn eval_tasks() -> Result<()> {
-    println!();
-    println!("{}", "📋 Bench Tasks".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "📋 Bench Tasks".bold());
+        println!();
+    }
     match bs::list_tasks().await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -196,9 +200,11 @@ async fn eval_tasks() -> Result<()> {
 }
 
 async fn eval_task(task_id: String) -> Result<()> {
-    println!();
-    println!("{} Task {}", "🔍".bold(), task_id.cyan());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{} Task {}", "🔍".bold(), task_id.cyan());
+        println!();
+    }
     match bs::get_task(&task_id).await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -220,9 +226,11 @@ async fn eval_task(task_id: String) -> Result<()> {
 }
 
 async fn eval_suites() -> Result<()> {
-    println!();
-    println!("{}", "📦 Bench Suites".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "📦 Bench Suites".bold());
+        println!();
+    }
     match bs::list_suites().await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -269,9 +277,11 @@ async fn eval_suites() -> Result<()> {
 }
 
 async fn eval_result(task_id: String) -> Result<()> {
-    println!();
-    println!("{} Result for {}", "📈".bold(), task_id.cyan());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{} Result for {}", "📈".bold(), task_id.cyan());
+        println!();
+    }
     match bs::get_result(&task_id).await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -293,9 +303,11 @@ async fn eval_result(task_id: String) -> Result<()> {
 }
 
 async fn eval_trend() -> Result<()> {
-    println!();
-    println!("{}", "📊 Results Trend".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "📊 Results Trend".bold());
+        println!();
+    }
     match bs::results_trend().await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -345,9 +357,11 @@ async fn eval_trend() -> Result<()> {
 }
 
 async fn eval_baselines() -> Result<()> {
-    println!();
-    println!("{}", "📏 Bench Baselines".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "📏 Bench Baselines".bold());
+        println!();
+    }
     match bs::list_baselines().await {
         Ok(data) => {
             if output::is_json_mode() {
@@ -397,9 +411,11 @@ async fn eval_baselines() -> Result<()> {
 }
 
 async fn eval_gates() -> Result<()> {
-    println!();
-    println!("{}", "🚦 Quality Gates".bold());
-    println!();
+    if !output::is_json_mode() {
+        println!();
+        println!("{}", "🚦 Quality Gates".bold());
+        println!();
+    }
     match bs::list_gates().await {
         Ok(data) => {
             if output::is_json_mode() {

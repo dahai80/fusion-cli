@@ -5,6 +5,35 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-09-01
+
+### Fixed
+- `--format=json` no longer leaks banner text before JSON in `cluster`, `memory`,
+  and `eval` command groups. All pre-match `println!` banners are now guarded by
+  `if !output::is_json_mode()`, so `--format=json` emits pure JSON (verified live:
+  `{` on first line). Established by the v0.2.6 JSON-purity pattern; missed on the
+  new v0.3.0 command groups, now applied to `cluster.rs`, `memory.rs`,
+  `benchsvc.rs` (`sync.rs` was already clean).
+- `cluster status` / `cluster nodes` / `cluster routing` / `cluster pending` /
+  `sync manifest` / `sync incremental` now reach the fusion-multi-node Master
+  directly (port 11452) instead of the MLX gateway. The old routing hit
+  `mlx.base_url/api/cluster/status`, which the gateway has no route for (404).
+- `cluster` / `sync` commands no longer return `{"detail":"Unauthorized"}` from
+  the Master. `BearerAuthMiddleware` (fusion_multi_node/utils/auth.py) requires a
+  Bearer `cluster_token` on all routes except `/api/health*`. CLI now attaches
+  `Authorization: Bearer <multinode.api_key>` via an `auth_header()` helper
+  (mirroring memory.rs); send no header when the key is empty.
+
+### Added
+- `multinode.api-key` config key (`~/.fusion/config.toml`, `[multinode]` section,
+  default empty). Set with `fusion config set multinode.api-key <FUSION_CLUSTER_TOKEN>`
+  to unlock `cluster` / `sync` against a token-protected Master.
+
+### Tests
+- 63 → 69 unit tests (+6 multinode service URL/payload-shape tests, +1 config
+  default-`api_key`-empty test). Gates green: `cargo fmt --check`,
+  `cargo clippy --all-targets -- -D warnings` (exit 0), `cargo test`.
+
 ## [0.3.0] - 2026-09-01
 
 ### Added
