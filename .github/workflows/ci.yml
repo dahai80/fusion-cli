@@ -17,12 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-          # 校验全部维度: 许可证白名单 + RustSec 漏洞公告 + 重复依赖 + 禁包 + 源白名单。
-          # deny.toml 在仓库根自动发现; all-features 在 [graph] 段配置, 无需 CLI 传参。
-          arguments: advisories bans licenses sources
+      - uses: dtolnay/rust-toolchain@stable
+      # 直接 cargo install cargo-deny, 不用 EmbarkStudios/cargo-deny-action@v2:
+      # 该 action v2 把 arguments 拼到 command 之前, 导致 `cargo-deny advisories ... check`
+      # 被解析为未知子命令 (2026-09-01 上游回归)。直接调用 cargo deny 顺序确定。
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --quiet
+      # 校验全部维度: 许可证白名单 + RustSec 漏洞公告 + 重复依赖 + 禁包 + 源白名单。
+      # deny.toml 在仓库根自动发现; all-features 在 [graph] 段配置, 无需 CLI 传参。
+      - run: cargo deny check advisories bans licenses sources
 
   check:
     name: Check
