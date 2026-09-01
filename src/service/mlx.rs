@@ -128,7 +128,7 @@ pub async fn list_models() -> Result<Vec<ModelInfo>> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "MLX").await?;
     let models: Vec<ModelInfo> = serde_json::from_value(data["data"].clone())?;
     Ok(models)
 }
@@ -172,6 +172,7 @@ fn aggregate_sse_to_response(raw: &str) -> Result<InferenceResponse> {
     let mut model = String::new();
     let mut prompt_tokens = 0u32;
     let mut completion_tokens = 0u32;
+    let mut finish_reason: Option<String> = None;
     for line in raw.lines() {
         let line = line.trim();
         if !line.starts_with("data:") {
@@ -183,7 +184,10 @@ fn aggregate_sse_to_response(raw: &str) -> Result<InferenceResponse> {
         }
         let chunk: serde_json::Value = match serde_json::from_str(data) {
             Ok(v) => v,
-            Err(_) => continue,
+            Err(e) => {
+                info!(data = %data, error = %e, "skipping malformed SSE chunk");
+                continue;
+            }
         };
         if model.is_empty()
             && let Some(m) = chunk.get("model").and_then(|v| v.as_str())
@@ -205,6 +209,11 @@ fn aggregate_sse_to_response(raw: &str) -> Result<InferenceResponse> {
                 {
                     content.push_str(c);
                 }
+                if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str())
+                    && !fr.is_empty()
+                {
+                    finish_reason = Some(fr.to_string());
+                }
             }
         }
     }
@@ -222,7 +231,7 @@ fn aggregate_sse_to_response(raw: &str) -> Result<InferenceResponse> {
                     Some(content)
                 },
             },
-            finish_reason: Some("stop".to_string()),
+            finish_reason: Some(finish_reason.unwrap_or_else(|| "stop".to_string())),
         }],
         usage: if prompt_tokens > 0 || completion_tokens > 0 {
             Some(Usage {
@@ -264,7 +273,7 @@ pub async fn create_embedding(model: &str, input: &str) -> Result<Vec<f64>> {
         .timeout(Duration::from_secs(30))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "MLX").await?;
     let embedding: Vec<f64> = serde_json::from_value(data["data"][0]["embedding"].clone())?;
     Ok(embedding)
 }
@@ -278,7 +287,7 @@ pub async fn get_server_stats() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "MLX stats").await?;
     Ok(data)
 }
 
@@ -424,5 +433,33 @@ mod tests {
             .trim_end_matches('/')
             .to_string();
         assert_eq!(s, "http://localhost:11432");
+    }
+
+    #[test]
+    fn test_aggregate_sse_propagates_finish_reason_length() {
+        let chunk = r#"{"model":"qwen","choices":[{"delta":{},"finish_reason":"length"}]}"#;
+        let raw = format!(
+            "data: {}
+
+data: [DONE]
+",
+            chunk
+        );
+        let resp = aggregate_sse_to_response(&raw).unwrap();
+        assert_eq!(resp.choices[0].finish_reason.as_deref(), Some("length"));
+    }
+
+    #[test]
+    fn test_aggregate_sse_finish_reason_defaults_stop() {
+        let chunk = r#"{"model":"qwen","choices":[{"delta":{"content":"hi"}}]}"#;
+        let raw = format!(
+            "data: {}
+
+data: [DONE]
+",
+            chunk
+        );
+        let resp = aggregate_sse_to_response(&raw).unwrap();
+        assert_eq!(resp.choices[0].finish_reason.as_deref(), Some("stop"));
     }
 }

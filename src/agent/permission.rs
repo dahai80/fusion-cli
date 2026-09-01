@@ -24,22 +24,31 @@ impl PermissionTier {
                     .collect();
                 safe.contains(tool_name)
             }
-            PermissionTier::Ask => true,
-            PermissionTier::Auto => true,
+            PermissionTier::Ask | PermissionTier::Auto => true,
         }
     }
 
-    #[allow(dead_code)]
     pub fn requires_confirmation(&self, tool_name: &str) -> bool {
         match self {
-            PermissionTier::Sandbox => false,
+            PermissionTier::Sandbox | PermissionTier::Auto => false,
             PermissionTier::Ask => {
                 let dangerous: HashSet<&str> = ["delete_model", "stop_task", "shell", "run_task"]
                     .into_iter()
                     .collect();
                 dangerous.contains(tool_name)
             }
-            PermissionTier::Auto => false,
         }
+    }
+
+    pub async fn confirm(&self, tool_name: &str) -> bool {
+        if !self.requires_confirmation(tool_name) {
+            return true;
+        }
+        let prompt = format!("Allow agent to run tool '{}'?", tool_name);
+        dialoguer::Confirm::new()
+            .with_prompt(prompt)
+            .default(false)
+            .interact()
+            .unwrap_or(false)
     }
 }

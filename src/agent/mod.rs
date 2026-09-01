@@ -109,7 +109,14 @@ impl Agent {
             for tc in &valid_calls {
                 if !self.config.permission_tier.allow_tool(&tc.tool_name) {
                     let msg = format!("[Permission denied for tool: {}]", tc.tool_name);
-                    info!(tool = %tc.tool_name, "Tool call denied by permission tier");
+                    info!(tool = %tc.tool_name, "Tool call denied by permission tier (not allowed)");
+                    self.context.add_system_message(&msg);
+                    continue;
+                }
+
+                if !self.config.permission_tier.confirm(&tc.tool_name).await {
+                    let msg = format!("[Tool '{}' denied by user]", tc.tool_name);
+                    info!(tool = %tc.tool_name, "Tool call denied by user confirmation");
                     self.context.add_system_message(&msg);
                     continue;
                 }

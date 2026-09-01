@@ -5,6 +5,59 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-09-01
+
+### Security
+- **Permission system now enforced (was non-functional).** `agent::permission::confirm`
+  actually prompts and honors the tiered tool list — previously all tools auto-allowed
+  regardless of the "dangerous" classification (P0-1). Default-to-deny on prompt error.
+- **Path traversal in model delete/info/convert/quantize blocked.** `validate_model_name`
+  rejects names containing path separators/back-segments, preventing `../` escape out of
+  the models directory (P0-2).
+
+### Fixed
+- Fake service stops removed: `service stop kb/modelhub/desk/doc` now print honest
+  "manual stop required" hints instead of a false `✅` (P1-1).
+- `service log <name>` matching fixed — only tail files whose name starts with the
+  service prefix, no longer grabs unrelated logs (P1-2).
+- `desk run --params` now forwards params to the service; `desk cron` honestly reports
+  it does not persist schedules (no placebo) (P1-3).
+- `--ctx` is a documented legacy alias for `--max-tokens` (generation cap), not context
+  window size; `effective_max_tokens()` resolves both (P1-5).
+- `net` subcommand error path honors `--format=json` (P1-6).
+- `--format=json` purity extended to all remaining handlers: `model` (pull/info/delete/
+  clean/convert/quant), `desk` (list/run/history/cron/stop), `service` (start/stop/log),
+  `rag` (start/stop/status/search/list), `chat` (rejects interactive REPL in JSON mode)
+  (P2-2).
+- `--version` now driven by `env!("CARGO_PKG_VERSION")` — single source of truth (P2-3).
+- `--offline` now gates external-network commands (`model pull/convert`) via the
+  `FUSION_OFFLINE` env var, failing fast with a clear message instead of hanging on DNS
+  (P2-4).
+- Dead `service::gateway` module deleted — gateway routing already lives in
+  `ServiceUrls::mlx_api()` (P2-1).
+
+### Changed
+- Health checks now probe all 9 services **concurrently** (`futures::join_all`); worst-case
+  blocking drops from 18s to 2s (P3-1).
+- All service modules route HTTP responses through `json_or_error()`: non-2xx bodies are
+  surfaced as `"<service> HTTP <status>: <body>"` instead of opaque serde parse errors
+  (P3-2). Applied to `mlx`, `memory`, `multinode`, `desk`.
+- SSE aggregator logs malformed chunks (`info!`) instead of silently dropping them, and
+  propagates the real `finish_reason` (e.g. `"length"` on truncation) instead of a
+  hardcoded `"stop"` (P3-3, P3-7).
+- `bench_speed` tool bails on a non-integer `tokens` arg instead of silently defaulting
+  to 128 (P3-4).
+- External process calls (`huggingface-cli download`, `mlx_lm.convert`) now run with
+  timeouts (60min download / 30min convert) via `tokio::time::timeout`, preventing
+  indefinite hangs on network stall or full disk (P3-5).
+- `embed --dir` now recurses into subdirectories and enforces a 512KB total cap, bailing
+  with a clear message instead of building an unbounded payload (P3-6).
+- `memory` and `multinode` URL path segments (`id`, `node_id`, `model_name`) validated
+  against `/` and `\` to prevent path injection (P3-8).
+
+### Tests
+- Unit test count: 69 → 71 (added `aggregate_sse` finish_reason propagation + default).
+
 ## [0.3.1] - 2026-09-01
 
 ### Fixed

@@ -55,30 +55,31 @@ pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
         ("MultiNode", &urls.multinode, "/api/health"),
     ];
 
-    let mut results = Vec::new();
-    for (name, base_url, health_path) in checks {
+    // 并发探测所有服务, 最坏阻塞 = 单个超时 (2s), 而非串行 N×2s。
+    let futs = checks.into_iter().map(|(name, base_url, health_path)| {
         let health_url = format!("{}{}", base_url.trim_end_matches('/'), health_path);
-        info!(service = %name, url = %health_url, "Checking service health with latency");
-
-        let start = std::time::Instant::now();
-        let alive = super::check_url(&health_url, 2).await;
-        let elapsed = start.elapsed();
-
-        let latency_ms = if alive {
-            Some(elapsed.as_millis() as u64)
-        } else {
-            None
-        };
-
-        let port = extract_port(base_url);
-        results.push(ServiceStatus {
-            name: name.to_string(),
-            url: base_url.to_string(),
-            alive,
-            port,
-            latency_ms,
-        });
-    }
+        let base_url = base_url.to_string();
+        async move {
+            info!(service = %name, url = %health_url, "Checking service health with latency");
+            let start = std::time::Instant::now();
+            let alive = super::check_url(&health_url, 2).await;
+            let elapsed = start.elapsed();
+            let latency_ms = if alive {
+                Some(elapsed.as_millis() as u64)
+            } else {
+                None
+            };
+            let port = extract_port(&base_url);
+            ServiceStatus {
+                name: name.to_string(),
+                url: base_url,
+                alive,
+                port,
+                latency_ms,
+            }
+        }
+    });
+    let results: Vec<ServiceStatus> = futures_util::future::join_all(futs).await;
     Ok(results)
 }
 

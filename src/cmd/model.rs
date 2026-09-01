@@ -2,9 +2,46 @@ use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
 use tabled::{Table, Tabled};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::service::{ServiceUrls, get_client};
+use crate::utils::output::is_json_mode;
+
+// 带超时运行外部进程, 防止网络卡死/磁盘满导致 CLI 永久阻塞。
+// 返回 std::process::Output 以兼容现有 match 逻辑。
+async fn run_with_timeout(
+    program: &str,
+    args: &[&str],
+    envs: &[(&str, String)],
+    timeout_secs: u64,
+    label: &str,
+) -> Result<std::process::Output> {
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.args(args);
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
+    let child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("spawn {} failed: {}", program, e))?;
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        child.wait_with_output(),
+    )
+    .await
+    {
+        Ok(o) => Ok(o?),
+        Err(_) => {
+            warn!(
+                program = program,
+                label = label,
+                timeout_secs = timeout_secs,
+                "external command timed out, killing"
+            );
+            anyhow::bail!("{} timed out after {}s", label, timeout_secs)
+        }
+    }
+}
 
 #[derive(Subcommand)]
 pub enum ModelCommands {
@@ -127,48 +164,86 @@ fn collect_local_models() -> Result<Vec<ModelEntry>> {
 }
 
 async fn pull_model(name: &str, mirror: &str) -> Result<()> {
-    println!("{} Pulling model: {}", "📥".bold(), name.cyan());
+    // 离线模式下，ModelHub 回退也要走外部网络，直接拒绝。
+    if std::env::var("FUSION_OFFLINE").unwrap_or_else(|_| "1".to_string()) == "1" {
+        anyhow::bail!(
+            "Offline mode is ON (--offline). Model pull requires external network (huggingface/ModelHub).\n\
+             Re-run with --offline=false to allow download."
+        );
+    }
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!("{} Pulling model: {}", "📥".bold(), name.cyan());
+    }
 
     let models_dir = get_models_dir();
     let target_dir = models_dir.join(name);
 
     if target_dir.exists() {
-        println!(
-            "  {} Model already exists at {}",
-            "⚠".yellow(),
-            target_dir.display()
-        );
-        let confirm = dialoguer::Confirm::new()
-            .with_prompt("Re-download and overwrite?")
-            .default(false)
-            .interact()?;
+        let confirm = if json_mode {
+            true
+        } else {
+            println!(
+                "  {} Model already exists at {}",
+                "⚠".yellow(),
+                target_dir.display()
+            );
+            dialoguer::Confirm::new()
+                .with_prompt("Re-download and overwrite?")
+                .default(false)
+                .interact()?
+        };
         if !confirm {
-            println!("  {} Cancelled.", "ℹ️".blue());
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "pulled": false, "model": name, "reason": "already exists, cancelled" })
+                    )?
+                );
+            } else {
+                println!("  {} Cancelled.", "ℹ️".blue());
+            }
             return Ok(());
         }
     }
 
-    println!("  Mirror: {}", mirror.cyan());
-    println!();
+    if !json_mode {
+        println!("  Mirror: {}", mirror.cyan());
+        println!();
+    }
 
     let hub_alive = crate::service::modelhub::health_check()
         .await
         .unwrap_or(false);
     if hub_alive {
         info!(model = name, "Attempting ModelHub download");
-        println!("  {} Downloading via Fusion-Model-Hub...", "⏳".blue());
+        if !json_mode {
+            println!("  {} Downloading via Fusion-Model-Hub...", "⏳".blue());
+        }
         match crate::service::modelhub::download_model(name).await {
             Ok(path) => {
-                println!("  {} Downloaded to: {}", "✅".green(), path.cyan());
-                println!(
-                    "  {} Use `fusion chat --model={}` to start chatting.",
-                    "💡".yellow(),
-                    name.cyan()
-                );
+                if json_mode {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(
+                            &serde_json::json!({ "pulled": true, "model": name, "source": "modelhub", "path": path })
+                        )?
+                    );
+                } else {
+                    println!("  {} Downloaded to: {}", "✅".green(), path.cyan());
+                    println!(
+                        "  {} Use `fusion chat --model={}` to start chatting.",
+                        "💡".yellow(),
+                        name.cyan()
+                    );
+                }
                 return Ok(());
             }
             Err(e) => {
-                println!("  {} ModelHub download failed: {}", "⚠".yellow(), e);
+                if !json_mode {
+                    println!("  {} ModelHub download failed: {}", "⚠".yellow(), e);
+                }
                 info!(error = %e, "ModelHub download failed, falling back to huggingface-cli");
             }
         }
@@ -179,11 +254,13 @@ async fn pull_model(name: &str, mirror: &str) -> Result<()> {
         mirror = mirror,
         "Downloading via huggingface-cli"
     );
-    println!(
-        "  {} Downloading via huggingface-cli (mirror: {})...",
-        "⏳".blue(),
-        mirror
-    );
+    if !json_mode {
+        println!(
+            "  {} Downloading via huggingface-cli (mirror: {})...",
+            "⏳".blue(),
+            mirror
+        );
+    }
 
     let model_id = name;
     let hf_mirror = if mirror.is_empty() {
@@ -192,32 +269,54 @@ async fn pull_model(name: &str, mirror: &str) -> Result<()> {
         mirror.to_string()
     };
 
-    let output = std::process::Command::new("huggingface-cli")
-        .env("HF_ENDPOINT", &hf_mirror)
-        .args([
+    let output = run_with_timeout(
+        "huggingface-cli",
+        &[
             "download",
             model_id,
             "--local-dir",
             &target_dir.to_string_lossy(),
-        ])
-        .output();
+        ],
+        &[("HF_ENDPOINT", hf_mirror.clone())],
+        3600,
+        "huggingface-cli download",
+    )
+    .await;
 
     match output {
         Ok(out) if out.status.success() => {
-            println!(
-                "  {} Downloaded to: {}",
-                "✅".green(),
-                target_dir.display().to_string().cyan()
-            );
-            println!(
-                "  {} Use `fusion chat --model={}` to start chatting.",
-                "💡".yellow(),
-                name.cyan()
-            );
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "pulled": true, "model": name, "source": "huggingface-cli", "path": target_dir.display().to_string() })
+                    )?
+                );
+            } else {
+                println!(
+                    "  {} Downloaded to: {}",
+                    "✅".green(),
+                    target_dir.display().to_string().cyan()
+                );
+                println!(
+                    "  {} Use `fusion chat --model={}` to start chatting.",
+                    "💡".yellow(),
+                    name.cyan()
+                );
+            }
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
             error!(stderr = %stderr, "huggingface-cli download failed");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "pulled": false, "model": name, "exit_code": out.status.code(), "stderr": stderr.trim() })
+                    )?
+                );
+                return Ok(());
+            }
             anyhow::bail!(
                 "Download failed: huggingface-cli exited with code {:?}\n{}",
                 out.status.code(),
@@ -226,6 +325,15 @@ async fn pull_model(name: &str, mirror: &str) -> Result<()> {
         }
         Err(e) => {
             error!(error = %e, "huggingface-cli not found");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "pulled": false, "model": name, "error": "huggingface-cli not found (pip install huggingface_hub)" })
+                    )?
+                );
+                return Ok(());
+            }
             anyhow::bail!(
                 "huggingface-cli not found. Install with: pip install huggingface_hub\n\
                  Or start Fusion-Model-Hub for API-based downloads."
@@ -237,9 +345,42 @@ async fn pull_model(name: &str, mirror: &str) -> Result<()> {
 }
 
 async fn model_info(name: &str) -> Result<()> {
+    validate_model_name(name)?;
     let model_dir = get_models_dir().join(name);
     if !model_dir.exists() {
         anyhow::bail!("Model '{}' not found at {}", name, model_dir.display());
+    }
+
+    let size = dir_size(&model_dir);
+    let mut info = serde_json::json!({
+        "name": name,
+        "path": model_dir.display().to_string(),
+        "size_bytes": size,
+        "format": "MLX (native)",
+    });
+
+    let config_path = model_dir.join("config.json");
+    if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path)?;
+        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(model_type) = config.get("model_type").and_then(|v| v.as_str()) {
+                info["model_type"] = serde_json::Value::String(model_type.to_string());
+            }
+            if let Some(num_params) = config.get("num_parameters").and_then(|v| v.as_u64()) {
+                info["params_billions"] = serde_json::json!(num_params as f64 / 1_000_000_000.0);
+            }
+            if let Some(ctx_len) = config
+                .get("max_position_embeddings")
+                .and_then(|v| v.as_u64())
+            {
+                info["max_context"] = serde_json::json!(ctx_len);
+            }
+        }
+    }
+
+    if is_json_mode() {
+        println!("{}", serde_json::to_string_pretty(&info)?);
+        return Ok(());
     }
 
     println!();
@@ -247,58 +388,58 @@ async fn model_info(name: &str) -> Result<()> {
     println!("  Path:     {}", model_dir.display().to_string().cyan());
     println!(
         "  Size:     {}",
-        indicatif::HumanBytes(dir_size(&model_dir))
-            .to_string()
-            .cyan()
+        indicatif::HumanBytes(size).to_string().cyan()
     );
     println!("  Format:   MLX (native)");
-
-    let config_path = model_dir.join("config.json");
-    if config_path.exists() {
-        let content = std::fs::read_to_string(&config_path)?;
-        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(model_type) = config.get("model_type").and_then(|v| v.as_str()) {
-                println!("  Type:     {}", model_type.cyan());
-            }
-            if let Some(num_params) = config.get("num_parameters").and_then(|v| v.as_u64()) {
-                println!(
-                    "  Params:   {}B",
-                    (num_params as f64 / 1_000_000_000.0).to_string().cyan()
-                );
-            }
-            if let Some(ctx_len) = config
-                .get("max_position_embeddings")
-                .and_then(|v| v.as_u64())
-            {
-                println!("  Max Ctx:  {}", ctx_len.to_string().cyan());
-            }
-        }
+    if let Some(t) = info.get("model_type").and_then(|v| v.as_str()) {
+        println!("  Type:     {}", t.cyan());
     }
-
+    if let Some(p) = info.get("params_billions").and_then(|v| v.as_f64()) {
+        println!("  Params:   {}B", p.to_string().cyan());
+    }
+    if let Some(c) = info.get("max_context").and_then(|v| v.as_u64()) {
+        println!("  Max Ctx:  {}", c.to_string().cyan());
+    }
     println!();
     println!("{} Compatible with all fusion-mlx commands.", "✅".green());
     Ok(())
 }
 
 async fn delete_model(name: &str) -> Result<()> {
+    validate_model_name(name)?;
     let model_dir = get_models_dir().join(name);
     if !model_dir.exists() {
         anyhow::bail!("Model '{}' not found", name);
     }
 
-    let confirm = dialoguer::Confirm::new()
-        .with_prompt(format!(
-            "Delete model '{}' ({}). This cannot be undone!",
-            name.cyan(),
-            indicatif::HumanBytes(dir_size(&model_dir))
-        ))
-        .default(false)
-        .interact()?;
+    let json_mode = is_json_mode();
+    // json 模式为自动化场景，跳过交互确认直接删除（调用方应已自行确认）。
+    let confirm = if json_mode {
+        true
+    } else {
+        dialoguer::Confirm::new()
+            .with_prompt(format!(
+                "Delete model '{}' ({}). This cannot be undone!",
+                name.cyan(),
+                indicatif::HumanBytes(dir_size(&model_dir))
+            ))
+            .default(false)
+            .interact()?
+    };
 
     if confirm {
         std::fs::remove_dir_all(&model_dir)?;
-        println!("{} Deleted model: {}", "🗑️".green(), name.cyan());
-    } else {
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({ "deleted": true, "model": name })
+                )?
+            );
+        } else {
+            println!("{} Deleted model: {}", "🗑️".green(), name.cyan());
+        }
+    } else if !json_mode {
         println!("{} Cancelled.", "ℹ️".blue());
     }
 
@@ -306,25 +447,59 @@ async fn delete_model(name: &str) -> Result<()> {
 }
 
 async fn clean_models() -> Result<()> {
-    println!("{} Cleaning model cache...", "🧹".bold());
+    let json_mode = is_json_mode();
     let cache_dir = get_models_dir().join(".cache");
     if cache_dir.exists() {
         let size = dir_size(&cache_dir);
         std::fs::remove_dir_all(&cache_dir)?;
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({ "cleaned": true, "freed_bytes": size })
+                )?
+            );
+        } else {
+            println!("{} Cleaning model cache...", "🧹".bold());
+            println!(
+                "  {} Freed: {}",
+                "✅".green(),
+                indicatif::HumanBytes(size).to_string().cyan()
+            );
+        }
+    } else if json_mode {
         println!(
-            "  {} Freed: {}",
-            "✅".green(),
-            indicatif::HumanBytes(size).to_string().cyan()
+            "{}",
+            serde_json::to_string_pretty(
+                &serde_json::json!({ "cleaned": false, "freed_bytes": 0 })
+            )?
         );
     } else {
+        println!("{} Cleaning model cache...", "🧹".bold());
         println!("  {} No cache to clean.", "ℹ️".blue());
     }
     Ok(())
 }
 
 async fn convert_model(source: &str, quant: &str) -> Result<()> {
-    println!("{} Converting model: {}", "🔄".bold(), source.cyan());
-    println!("  Target quantization: {}", quant.cyan());
+    // convert 通过 mlx_lm.convert 从 HF repo 拉取源模型，需外部网络 → 离线模式拒绝。
+    if std::env::var("FUSION_OFFLINE").unwrap_or_else(|_| "1".to_string()) == "1" {
+        anyhow::bail!(
+            "Offline mode is ON (--offline). Convert pulls source from huggingface.\n\
+             Re-run with --offline=false to allow."
+        );
+    }
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!("{} Converting model: {}", "🔄".bold(), source.cyan());
+    }
+    // source for convert is an HF repo id (may contain '/' like "org/model"), not a local
+    // path joined into models_dir — but sanitize the local output dir name we derive from it.
+    let output_name = source.replace('/', "_");
+    validate_model_name(&output_name)?;
+    if !json_mode {
+        println!("  Target quantization: {}", quant.cyan());
+    }
 
     let mlx_path =
         std::path::PathBuf::from(std::env::var("FUSION_MLX_PATH").unwrap_or_else(|_| {
@@ -350,11 +525,16 @@ async fn convert_model(source: &str, quant: &str) -> Result<()> {
         }
     }
 
-    println!("  {} Running conversion via fusion-mlx...", "⏳".blue());
+    if !json_mode {
+        println!("  {} Running conversion via fusion-mlx...", "⏳".blue());
+    }
     info!(source = source, quant = quant, "Running model conversion");
 
-    let output = std::process::Command::new("python3")
-        .args([
+    let hf_endpoint =
+        std::env::var("HF_ENDPOINT").unwrap_or_else(|_| "https://hf-mirror.com".to_string());
+    let output = run_with_timeout(
+        "python3",
+        &[
             "-m",
             "mlx_lm.convert",
             "--hf-path",
@@ -362,27 +542,43 @@ async fn convert_model(source: &str, quant: &str) -> Result<()> {
             "--quantize",
             quant,
             "--mlx-path",
-            &get_models_dir()
-                .join(source.replace('/', "_"))
-                .to_string_lossy(),
-        ])
-        .env(
-            "HF_ENDPOINT",
-            std::env::var("HF_ENDPOINT").unwrap_or_else(|_| "https://hf-mirror.com".to_string()),
-        )
-        .output();
+            &get_models_dir().join(&output_name).to_string_lossy(),
+        ],
+        &[("HF_ENDPOINT", hf_endpoint)],
+        1800,
+        "mlx_lm.convert",
+    )
+    .await;
 
     match output {
         Ok(out) if out.status.success() => {
-            println!("  {} Conversion complete.", "✅".green());
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            if !stdout.trim().is_empty() {
-                println!("{}", stdout);
+            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "converted": true, "source": source, "quant": quant, "output": output_name, "stdout": stdout.trim() })
+                    )?
+                );
+            } else {
+                println!("  {} Conversion complete.", "✅".green());
+                if !stdout.trim().is_empty() {
+                    println!("{}", stdout);
+                }
             }
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
             error!(stderr = %stderr, "Conversion failed");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "converted": false, "exit_code": out.status.code(), "stderr": stderr.trim() })
+                    )?
+                );
+                return Ok(());
+            }
             anyhow::bail!(
                 "Conversion failed (exit {:?}):\n{}",
                 out.status.code(),
@@ -391,6 +587,15 @@ async fn convert_model(source: &str, quant: &str) -> Result<()> {
         }
         Err(e) => {
             error!(error = %e, "Failed to run conversion");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "converted": false, "error": e.to_string() })
+                    )?
+                );
+                return Ok(());
+            }
             anyhow::bail!(
                 "Failed to run mlx_lm.convert. Ensure mlx-lm is installed: pip install mlx-lm\n\
                  Error: {}",
@@ -403,12 +608,16 @@ async fn convert_model(source: &str, quant: &str) -> Result<()> {
 }
 
 async fn quantize_model(name: &str, target: &str) -> Result<()> {
-    println!(
-        "{} Quantizing model: {} → {}",
-        "🔧".bold(),
-        name.cyan(),
-        target.cyan()
-    );
+    validate_model_name(name)?;
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!(
+            "{} Quantizing model: {} → {}",
+            "🔧".bold(),
+            name.cyan(),
+            target.cyan()
+        );
+    }
 
     let model_dir = get_models_dir().join(name);
     if !model_dir.exists() {
@@ -423,11 +632,14 @@ async fn quantize_model(name: &str, target: &str) -> Result<()> {
     let output_name = format!("{}-{}", name, target);
     let output_dir = get_models_dir().join(&output_name);
 
-    println!("  {} Running quantization via mlx_lm...", "⏳".blue());
+    if !json_mode {
+        println!("  {} Running quantization via mlx_lm...", "⏳".blue());
+    }
     info!(model = name, target = target, "Running model quantization");
 
-    let output = std::process::Command::new("python3")
-        .args([
+    let output = run_with_timeout(
+        "python3",
+        &[
             "-m",
             "mlx_lm.convert",
             "--hf-path",
@@ -436,26 +648,48 @@ async fn quantize_model(name: &str, target: &str) -> Result<()> {
             target,
             "--mlx-path",
             &output_dir.to_string_lossy(),
-        ])
-        .output();
+        ],
+        &[],
+        1800,
+        "mlx_lm.quantize",
+    )
+    .await;
 
     match output {
         Ok(out) if out.status.success() => {
-            println!(
-                "  {} Quantized: {} → {}",
-                "✅".green(),
-                name.cyan(),
-                output_name.cyan()
-            );
-            println!("  Output: {}", output_dir.display());
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            if !stdout.trim().is_empty() {
-                println!("{}", stdout);
+            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "quantized": true, "model": name, "target": target, "output": output_name, "output_dir": output_dir.display().to_string(), "stdout": stdout.trim() })
+                    )?
+                );
+            } else {
+                println!(
+                    "  {} Quantized: {} → {}",
+                    "✅".green(),
+                    name.cyan(),
+                    output_name.cyan()
+                );
+                println!("  Output: {}", output_dir.display());
+                if !stdout.trim().is_empty() {
+                    println!("{}", stdout);
+                }
             }
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
             error!(stderr = %stderr, "Quantization failed");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "quantized": false, "exit_code": out.status.code(), "stderr": stderr.trim() })
+                    )?
+                );
+                return Ok(());
+            }
             anyhow::bail!(
                 "Quantization failed (exit {:?}):\n{}",
                 out.status.code(),
@@ -464,6 +698,15 @@ async fn quantize_model(name: &str, target: &str) -> Result<()> {
         }
         Err(e) => {
             error!(error = %e, "Failed to run quantization");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "quantized": false, "error": e.to_string() })
+                    )?
+                );
+                return Ok(());
+            }
             anyhow::bail!(
                 "Failed to run mlx_lm.convert. Ensure mlx-lm is installed: pip install mlx-lm\n\
                  Error: {}",
@@ -476,15 +719,18 @@ async fn quantize_model(name: &str, target: &str) -> Result<()> {
 }
 
 async fn submit_task(task: &str, model_id: Option<String>) -> Result<()> {
-    println!();
-    println!("{}", "📤 Submit Model Task".bold());
-    println!("  Task: {}", task.cyan());
-    if let Some(ref mid) = model_id {
-        println!("  Model ID: {}", mid.cyan());
-    } else {
-        println!("  Model ID: {} (default)", "auto".dimmed());
+    let json_mode = is_json_mode();
+    if !json_mode {
+        println!();
+        println!("{}", "📤 Submit Model Task".bold());
+        println!("  Task: {}", task.cyan());
+        if let Some(ref mid) = model_id {
+            println!("  Model ID: {}", mid.cyan());
+        } else {
+            println!("  Model ID: {} (default)", "auto".dimmed());
+        }
+        println!();
     }
-    println!();
 
     let urls = ServiceUrls::from_config();
     let url = format!(
@@ -512,19 +758,44 @@ async fn submit_task(task: &str, model_id: Option<String>) -> Result<()> {
         Ok(resp) if resp.status().is_success() => {
             let body = resp.text().await?;
             info!(body = %body, "Task submitted successfully");
-            println!("  {} Task submitted.", "✅".green());
-            match serde_json::from_str::<serde_json::Value>(&body) {
-                Ok(val) => println!("{}", serde_json::to_string_pretty(&val).unwrap_or(body)),
-                Err(_) => println!("{}", body),
+            if json_mode {
+                match serde_json::from_str::<serde_json::Value>(&body) {
+                    Ok(val) => println!("{}", serde_json::to_string_pretty(&val)?),
+                    Err(_) => println!("{}", body),
+                }
+            } else {
+                println!("  {} Task submitted.", "✅".green());
+                match serde_json::from_str::<serde_json::Value>(&body) {
+                    Ok(val) => println!("{}", serde_json::to_string_pretty(&val).unwrap_or(body)),
+                    Err(_) => println!("{}", body),
+                }
             }
         }
         Ok(resp) => {
             let status = resp.status();
             error!(status = %status, "Task submit failed");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "submitted": false, "status": status.as_u16() })
+                    )?
+                );
+                return Ok(());
+            }
             anyhow::bail!("Failed to submit task: HTTP {}", status);
         }
         Err(e) => {
             error!(error = %e, "Task submit connection error");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "submitted": false, "error": e.to_string() })
+                    )?
+                );
+                return Ok(());
+            }
             anyhow::bail!("Failed to connect to fusion-mlx: {}", e);
         }
     }
@@ -535,6 +806,25 @@ async fn submit_task(task: &str, model_id: Option<String>) -> Result<()> {
 fn get_models_dir() -> std::path::PathBuf {
     let home = dirs::home_dir().unwrap_or_default();
     home.join(".fusion").join("models")
+}
+
+fn validate_model_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("Model name cannot be empty");
+    }
+    if name.contains('/')
+        || name.contains('\\')
+        || name == "."
+        || name == ".."
+        || name.contains("..")
+        || name.starts_with('.')
+    {
+        anyhow::bail!(
+            "Invalid model name '{}': must not contain path separators or traversal sequences",
+            name
+        );
+    }
+    Ok(())
 }
 
 fn dir_size(path: &std::path::Path) -> u64 {

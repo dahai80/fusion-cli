@@ -9,6 +9,7 @@ use tabled::{
 use crate::service::ServiceUrls;
 use crate::service::health;
 use crate::service::{desk, doc, kb, modelhub, rag};
+use crate::utils::output::is_json_mode;
 
 #[derive(Subcommand)]
 pub enum ServiceCommands {
@@ -123,20 +124,32 @@ async fn service_status(watch_interval: Option<u64>) -> Result<()> {
 }
 
 async fn service_start(service: Option<String>) -> Result<()> {
+    let json_mode = is_json_mode();
     match service.as_deref() {
         None | Some("all") => {
-            println!("{} Starting all Fusion services...", "🚀".bold());
+            if !json_mode {
+                println!("{} Starting all Fusion services...", "🚀".bold());
+            }
             start_mlx().await;
             start_kb().await;
             start_modelhub().await;
             start_desk().await;
             start_rag().await;
             start_doc().await;
-            println!();
-            println!(
-                "{} All services started. Use `fusion service status` to verify.",
-                "✅".green()
-            );
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "action": "start", "target": "all", "status": "dispatched" })
+                    )?
+                );
+            } else {
+                println!();
+                println!(
+                    "{} All services started. Use `fusion service status` to verify.",
+                    "✅".green()
+                );
+            }
         }
         Some("mlx") => {
             start_mlx().await;
@@ -157,24 +170,45 @@ async fn service_start(service: Option<String>) -> Result<()> {
             start_doc().await;
         }
         Some(s) => {
-            println!("{} Unknown service: {}", "❌".red(), s.cyan());
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "action": "start", "target": s, "error": "unknown service" })
+                    )?
+                );
+            } else {
+                println!("{} Unknown service: {}", "❌".red(), s.cyan());
+            }
         }
     }
     Ok(())
 }
 
 async fn service_stop(service: Option<String>) -> Result<()> {
+    let json_mode = is_json_mode();
     match service.as_deref() {
         None | Some("all") => {
-            println!("{} Stopping all Fusion services...", "⏹️".bold());
+            if !json_mode {
+                println!("{} Stopping all Fusion services...", "⏹️".bold());
+            }
             stop_mlx().await;
             stop_kb().await;
             stop_modelhub().await;
             stop_desk().await;
             stop_rag().await;
             stop_doc().await;
-            println!();
-            println!("{} All services stopped.", "✅".green());
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "action": "stop", "target": "all", "status": "dispatched" })
+                    )?
+                );
+            } else {
+                println!();
+                println!("{} All services stopped.", "✅".green());
+            }
         }
         Some("mlx") | Some("fusion-mlx") => {
             stop_mlx().await;
@@ -195,7 +229,16 @@ async fn service_stop(service: Option<String>) -> Result<()> {
             stop_doc().await;
         }
         Some(s) => {
-            println!("{} Unknown service: {}", "❌".red(), s.cyan());
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "action": "stop", "target": s, "error": "unknown service" })
+                    )?
+                );
+            } else {
+                println!("{} Unknown service: {}", "❌".red(), s.cyan());
+            }
         }
     }
     Ok(())
@@ -209,53 +252,79 @@ async fn service_restart(service: Option<String>) -> Result<()> {
 }
 
 async fn service_log(service: Option<String>, lines: usize) -> Result<()> {
+    let json_mode = is_json_mode();
     let log_dir = dirs::home_dir()
         .unwrap_or_default()
         .join(".fusion")
         .join("logs");
     if !log_dir.exists() {
-        println!(
-            "{} No logs directory found at {}",
-            "ℹ️".blue(),
-            log_dir.display().to_string().cyan()
-        );
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({ "logs": [], "error": format!("no logs directory at {}", log_dir.display()) })
+                )?
+            );
+        } else {
+            println!(
+                "{} No logs directory found at {}",
+                "ℹ️".blue(),
+                log_dir.display().to_string().cyan()
+            );
+        }
         return Ok(());
     }
 
-    let pattern = match service.as_deref() {
-        Some(s) => format!("{}.log", s),
-        None => "*.log".to_string(),
-    };
-
-    let mut found = false;
+    let mut files: Vec<(String, Vec<String>)> = Vec::new();
     for entry in std::fs::read_dir(&log_dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {
             let name = path.file_name().unwrap_or_default().to_string_lossy();
-            if name.contains(pattern.trim_end_matches(".log")) {
-                found = true;
-                println!("{} {}:", "📋".bold(), name.cyan());
-                println!("{}", "─".repeat(60).dimmed());
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    let log_lines: Vec<&str> = content.lines().collect();
-                    let total = log_lines.len();
-                    let start = total.saturating_sub(lines);
-                    for line in &log_lines[start..] {
-                        println!("{}", line);
-                    }
-                }
-                println!("{}", "─".repeat(60).dimmed());
+            let matches = match service.as_deref() {
+                None => name.ends_with(".log"),
+                Some(s) => name == format!("{}.log", s) || name.starts_with(&format!("{}.", s)),
+            };
+            if matches {
+                let tail: Vec<String> = std::fs::read_to_string(&path)
+                    .map(|content| {
+                        let all: Vec<&str> = content.lines().collect();
+                        let total = all.len();
+                        let start = total.saturating_sub(lines);
+                        all[start..].iter().map(|s| s.to_string()).collect()
+                    })
+                    .unwrap_or_default();
+                files.push((name.to_string(), tail));
             }
         }
     }
 
-    if !found {
+    if json_mode {
+        let map: serde_json::Map<String, serde_json::Value> = files
+            .iter()
+            .map(|(name, tail)| (name.clone(), serde_json::Value::from(tail.clone())))
+            .collect();
+        let payload = serde_json::json!({ "logs": map, "files": files.len() });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
+    if files.is_empty() {
         println!(
             "{} No logs found for: {}",
             "ℹ️".blue(),
             service.unwrap_or_default().cyan()
         );
+        return Ok(());
+    }
+
+    for (name, tail) in &files {
+        println!("{} {}:", "📋".bold(), name.cyan());
+        println!("{}", "─".repeat(60).dimmed());
+        for line in tail {
+            println!("{}", line);
+        }
+        println!("{}", "─".repeat(60).dimmed());
     }
 
     Ok(())
@@ -373,23 +442,34 @@ async fn stop_mlx() {
 }
 
 async fn stop_kb() {
-    println!("  {} Stopping Fusion-KB...", "⏳".blue());
-    println!("  {} Fusion-KB stopped", "✅".green());
+    println!(
+        "  {} Fusion-KB stop: manual stop required (no PID management).",
+        "ℹ️".blue()
+    );
+    println!("     Try: pkill -f fusion-kb");
 }
 
 async fn stop_modelhub() {
-    println!("  {} Stopping Model-Hub...", "⏳".blue());
-    println!("  {} Model-Hub stopped", "✅".green());
+    println!(
+        "  {} Model-Hub stop: manual stop required (no PID management).",
+        "ℹ️".blue()
+    );
+    println!("     Try: pkill -f fusion-model-hub");
 }
 
 async fn stop_desk() {
-    println!("  {} Stopping Fusion-Desk...", "⏳".blue());
-    println!("  {} Fusion-Desk stopped", "✅".green());
+    println!(
+        "  {} Fusion-Desk stop: manual stop required (no PID management).",
+        "ℹ️".blue()
+    );
+    println!("     Try: pkill -f fusion-desk");
 }
 
 async fn stop_rag() {
-    println!("  {} Stopping Fusion-RAG...", "⏳".blue());
-    println!("  {} Fusion-RAG stopped", "✅".green());
+    println!(
+        "  {} Fusion-RAG: use `fusion rag stop` (PID-managed).",
+        "ℹ️".blue()
+    );
 }
 
 async fn start_doc() {
@@ -410,8 +490,11 @@ async fn start_doc() {
 }
 
 async fn stop_doc() {
-    println!("  {} Stopping Fusion-Doc...", "⏳".blue());
-    println!("  {} Fusion-Doc stopped", "✅".green());
+    println!(
+        "  {} Fusion-Doc stop: manual stop required (no PID management).",
+        "ℹ️".blue()
+    );
+    println!("     Try: pkill -f fusion-doc");
 }
 
 #[derive(Tabled)]

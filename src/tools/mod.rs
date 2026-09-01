@@ -94,10 +94,12 @@ impl Tool for BenchSpeedTool {
         let model = args
             .get("model")
             .ok_or_else(|| anyhow::anyhow!("Missing 'model' argument"))?;
-        let tokens: u32 = args
-            .get("tokens")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(128);
+        let tokens: u32 = match args.get("tokens") {
+            None => 128,
+            Some(v) => v
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid tokens '{}', expected integer", v))?,
+        };
         let result = crate::service::mlx::generate_tokens(model, tokens).await?;
         Ok(serde_json::to_string_pretty(&serde_json::json!({
             "tokens_per_sec": result.tokens_per_sec,

@@ -13,10 +13,11 @@ use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "fusion")]
-#[command(version = "0.3.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.", long_about = None)]
 struct Cli {
-    /// 强制离线模式（默认开启）
+    /// 离线模式：禁止任何外部网络（huggingface 等），仅限本地 127.0.0.1 服务。
+    /// 默认开启（local-first）。设 --offline=false 才允许外部网络拉取。
     #[arg(global = true, long, default_value_t = true)]
     offline: bool,
 
@@ -212,6 +213,11 @@ async fn main() -> anyhow::Result<()> {
         unsafe {
             std::env::set_var("FUSION_OUTPUT_FORMAT", "json");
         }
+    }
+
+    // 离线模式标记：下游（model pull / sync）读取此 env 决定是否允许外部网络。
+    unsafe {
+        std::env::set_var("FUSION_OFFLINE", if cli.offline { "1" } else { "0" });
     }
 
     // 执行命令

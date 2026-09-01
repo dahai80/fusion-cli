@@ -1,7 +1,6 @@
 pub mod benchsvc;
 pub mod desk;
 pub mod doc;
-pub mod gateway;
 pub mod guard;
 pub mod health;
 pub mod kb;
@@ -96,6 +95,22 @@ pub async fn check_url(url: &str, timeout_secs: u64) -> bool {
         Ok(resp) => resp.status().is_success(),
         Err(_) => false,
     }
+}
+
+// 统一: 检查 HTTP 状态码, 非 2xx bail 出可读错误 (服务名 + 状态 + 截断 body),
+// 否则解析 JSON。避免裸 resp.json() 把 nginx 502 HTML 解析错吐成不可懂的 serde 错。
+pub async fn json_or_error(
+    resp: reqwest::Response,
+    service: &str,
+) -> anyhow::Result<serde_json::Value> {
+    let status = resp.status();
+    if status.is_success() {
+        let data: serde_json::Value = resp.json().await?;
+        return Ok(data);
+    }
+    let text = resp.text().await.unwrap_or_default();
+    let snippet: String = text.chars().take(200).collect();
+    anyhow::bail!("{} HTTP {}: {}", service, status, snippet)
 }
 
 #[cfg(test)]
