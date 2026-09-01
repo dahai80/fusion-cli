@@ -100,10 +100,14 @@ async fn rag_start(port: u16) -> Result<()> {
     }
 
     let pid_file = home.join(".fusion").join("run").join("fusion-rag.pid");
-    std::fs::create_dir_all(pid_file.parent().unwrap())?;
+    std::fs::create_dir_all(pid_file.parent().ok_or_else(|| {
+        anyhow::anyhow!("cannot resolve parent of pid file {}", pid_file.display())
+    })?)?;
 
     let log_file = home.join(".fusion").join("logs").join("fusion-rag.log");
-    std::fs::create_dir_all(log_file.parent().unwrap())?;
+    std::fs::create_dir_all(log_file.parent().ok_or_else(|| {
+        anyhow::anyhow!("cannot resolve parent of log file {}", log_file.display())
+    })?)?;
 
     let log = std::fs::File::create(&log_file)?;
     let child = std::process::Command::new(&rag_bin)

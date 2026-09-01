@@ -40,8 +40,9 @@ pub async fn list_templates() -> Result<Vec<DeskTemplate>> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: Vec<DeskTemplate> = resp.json().await.unwrap_or_default();
-    Ok(data)
+    let data: serde_json::Value = super::json_or_error(resp, "desk list_templates").await?;
+    let templates: Vec<DeskTemplate> = serde_json::from_value(data)?;
+    Ok(templates)
 }
 
 pub async fn run_task(template: &str, params: Option<&str>) -> Result<String> {
@@ -76,11 +77,13 @@ pub async fn get_history(limit: u32) -> Result<Vec<DeskHistoryEntry>> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: Vec<DeskHistoryEntry> = resp.json().await.unwrap_or_default();
-    Ok(data)
+    let data: serde_json::Value = super::json_or_error(resp, "desk get_history").await?;
+    let history: Vec<DeskHistoryEntry> = serde_json::from_value(data)?;
+    Ok(history)
 }
 
 pub async fn stop_task(task_id: &str) -> Result<bool> {
+    super::validate_path_segment("task_id", task_id)?;
     let client = get_client();
     let url = format!("{}/api/tasks/{}/stop", base_url(), task_id);
     info!(url = %url, task_id = task_id, "Stopping desk task");

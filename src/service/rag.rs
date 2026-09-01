@@ -37,11 +37,12 @@ pub async fn get_health_detail() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(3))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "rag").await?;
     Ok(data)
 }
 
 pub async fn search(kb_id: &str, query: &str, top_k: usize) -> Result<serde_json::Value> {
+    super::validate_path_segment("kb_id", kb_id)?;
     let client = get_client();
     let url = format!("{}/kb/{}/search", api_base(), kb_id);
     info!(url = %url, kb_id = %kb_id, "RAG search");
@@ -55,7 +56,7 @@ pub async fn search(kb_id: &str, query: &str, top_k: usize) -> Result<serde_json
         .timeout(Duration::from_secs(30))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "rag search").await?;
     Ok(data)
 }
 
@@ -68,7 +69,7 @@ pub async fn list_knowledge_bases() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "rag").await?;
     Ok(data)
 }
 
@@ -81,6 +82,6 @@ pub async fn list_embedding_models() -> Result<serde_json::Value> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "rag").await?;
     Ok(data)
 }

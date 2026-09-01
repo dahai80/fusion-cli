@@ -31,11 +31,13 @@ pub async fn list_bases() -> Result<Vec<KbInfo>> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: Vec<KbInfo> = resp.json().await?;
-    Ok(data)
+    let data: serde_json::Value = super::json_or_error(resp, "kb list_bases").await?;
+    let bases: Vec<KbInfo> = serde_json::from_value(data)?;
+    Ok(bases)
 }
 
 pub async fn query(kb_id: &str, question: &str, top_k: usize) -> Result<serde_json::Value> {
+    super::validate_path_segment("kb_id", kb_id)?;
     let client = get_client();
     let url = format!("{}/kb/bases/{}/query", base_url(), kb_id);
     info!(url = %url, kb_id = %kb_id, "Querying KB");
@@ -49,7 +51,7 @@ pub async fn query(kb_id: &str, question: &str, top_k: usize) -> Result<serde_js
         .timeout(Duration::from_secs(30))
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: serde_json::Value = super::json_or_error(resp, "kb query").await?;
     Ok(data)
 }
 

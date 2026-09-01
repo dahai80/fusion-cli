@@ -5,6 +5,101 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-09-01
+
+Enterprise production-readiness round 2 — added audit trail, observability
+metrics, and consolidated architecture debt (A1). 95 → 101 tests. All gates green.
+
+### Added — Compliance & Observability
+- **Audit trail** (`~/.fusion/audit/audit.log`): append-only JSONL recording
+  `ts/actor/command/outcome/duration_ms/detail` for every invocation. Credential
+  fields (api_key/token/secret/password) auto-redacted; detail capped at 2 KB.
+  New `fusion audit view -c N` / `fusion audit path` subcommands (read-only).
+- **Observability metrics** (`~/.fusion/metrics/metrics.json`): process-level
+  counters (requests, errors, model pulls, KB ingests, bench runs, service ops)
+  + latency histogram buckets (0-50/50-200/200-500/500-2000/2000+ ms). New
+  `fusion metrics view` / `fusion metrics json` / `fusion metrics path`
+  subcommands. JSON export enables external Prometheus exporter wiring.
+- Both audit + metrics hooked into the central `async_main` dispatch loop —
+  no per-command instrumentation needed.
+
+### Architecture — A1 ServiceUrls Consolidation
+- Removed drift-prone duplicate `base_url()`/`stats_url()` helpers in
+  `service/mlx.rs` that each called `from_config()` independently of the
+  same function's `service_urls()` (redundant config reads + duplicated
+  trim-`/v1` logic). Centralized MLX root-path trimming into a new
+  `ServiceUrls::mlx_base()` accessor; `mlx_api()` now delegates to it. Every
+  mlx.rs function now resolves `ServiceUrls` exactly once per call.
+
+### Fixed — Product Audit Functional (G-series)
+- **G1 (P2)**: `kb ingest` now explicitly prints "Files staged in KB dir (not
+  yet vectorized)" so users know the op is file staging, not real indexing.
+  Full vectorization routing to fusion-rag's `/bases/{kb_id}/documents/ingest`
+  tracked in issue #18 (requires running fusion-rag + embedding model).
+- **G2 (P2)**: `Agent` subcommand help text now reads "AI 只读助手 (带只读工具
+  调用)" — accurate positioning, no over-promise of write/orchestration ability.
+- **G3 (P3)**: `desk cron` non-persistence already explicitly labeled (unchanged,
+  audit confirmed non-concealed).
+
+### Tests
+- 95 → 101 (audit redaction + metrics bucketing + metrics snapshot).
+
+## [0.3.4] - 2026-09-01
+
+Product-readiness audit remediation — fixed all P0–P3 findings from the
+six-dimension product audit (`audit/fusion-cli-audit-result-product-0901.md`).
+91 → 95 tests. Build, fmt, clippy (`-D warnings`) all green.
+
+### Security (P0)
+- **`fusion init` no longer writes a world-readable 0644 config with a hardcoded
+  default `fg-admin-key`.** Init now generates a random 32-byte hex API key from
+  `/dev/urandom` and writes the config via `save_config` (chmod 0600). Existing
+  configs keep their key but `doctor` now flags open permissions (P0-1).
+- **Upgrade no longer silently drops user config.** All config sub-structs
+  (`model`/`kb`/`mlx`/`modelhub`/`rag`/`desk`/`doc`/`memory`/`bench`/`multinode`/`log`)
+  now use `#[serde(default)]` per-field with `default = "fn"` helpers plus a per-struct
+  `Default` impl, so a v0.2.x config missing newer sections parses and fills defaults
+  instead of failing. A `config_version` field + `migrate_config()` tracks schema versions
+  (current `0.3.4`). Malformed TOML is backed up to `config.toml.bak.<unix_ts>` and
+  surfaced via `eprintln` + `tracing::error` rather than silently falling back (P0-2).
+
+### Fixed (P1)
+- **Path-traversal injection on URL path segments.** Added a shared
+  `service::validate_path_segment` rejecting `/` and `\`, applied to kb names,
+  RAG `kb_id`, KB service `kb_id`, ModelHub model name, desk `task_id`,
+  bench `task_id`, memory `id`, and multinode `node_id`/`model_name` (S5/A14).
+- **Bare `resp.json()` swallowed HTTP errors as opaque serde failures.** Unified
+  15+ sites across `service/{kb,rag,doc,benchsvc,modelhub,desk}.rs` through
+  `json_or_error(resp, service)`, which bails with service name + status + body
+  snippet on non-2xx. Replaced `unwrap_or_default()` silent swallows in
+  `desk::list_templates`/`get_history` and `modelhub::search` (P1-3).
+- **Orphaned child processes on timeout.** `model pull/convert/quant` external
+  commands now set `kill_on_drop(true)` so a timeout actually SIGKILLs the
+  `huggingface-cli`/`mlx_lm` child instead of leaving it consuming bandwidth/disk (P1-4).
+- **`parent().unwrap()` panic risk in `rag start`** replaced with `ok_or_else`
+  error propagation (P1-4).
+- **Persistent file logging.** Added `tracing-appender` writing to
+  `~/.fusion/fusion-cli.log` alongside the console layer; terminal output stays
+  timestamp-free while the file layer carries timestamps for post-mortem audit.
+  Falls back to console-only if the log dir is unwritable (P1-6).
+- **`service restart` raced on a hardcoded 1s sleep.** Now polls
+  `health_check` until the service is confirmed down (up to 5s) before
+  starting, avoiding port-in-use failures (P1-7).
+- **`doctor` now covers the full ecosystem.** Added `fusion-memory`,
+  `fusion-bench`, `fusion-multi-node`, and `Fusion-Doc` health checks, plus a
+  config validation block: parse success, `config_version` freshness, and
+  `0600` permission check (P1-8).
+- **Dead gateway subsystem removed.** `GatewayConfig` struct, `gateway` field,
+  and `default_gateway_url()` deleted; MLX port routing is independent and
+  unchanged (P1-9).
+
+### Fixed (P2/P3)
+- **`kb ingest` reported attempted count as success.** Metadata `document_count`
+  now reflects the actual count of successfully copied files, and a warning lists
+  failures (F6).
+- **`bench` `System::new_all()` enumerated all processes for a memory-only read.**
+  Switched to `System::new()` + `refresh_memory()` at both bench sites (P3-4).
+
 ## [0.3.3] - 2026-09-01
 
 ### Security

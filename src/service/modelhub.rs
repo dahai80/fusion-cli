@@ -31,8 +31,9 @@ pub async fn list_models() -> Result<Vec<ModelEntry>> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: Vec<ModelEntry> = resp.json().await?;
-    Ok(data)
+    let data: serde_json::Value = super::json_or_error(resp, "modelhub list_models").await?;
+    let models: Vec<ModelEntry> = serde_json::from_value(data)?;
+    Ok(models)
 }
 
 #[allow(dead_code)]
@@ -45,11 +46,13 @@ pub async fn search(name: &str) -> Result<Vec<ModelEntry>> {
         .timeout(Duration::from_secs(5))
         .send()
         .await?;
-    let data: Vec<ModelEntry> = resp.json().await.unwrap_or_default();
-    Ok(data)
+    let data: serde_json::Value = super::json_or_error(resp, "modelhub search").await?;
+    let models: Vec<ModelEntry> = serde_json::from_value(data)?;
+    Ok(models)
 }
 
 pub async fn download_model(name: &str) -> Result<String> {
+    super::validate_path_segment("model name", name)?;
     let client = get_client();
     let url = format!("{}/v1/models/{}/download", base_url(), name);
     info!(url = %url, model = name, "Requesting model download");
