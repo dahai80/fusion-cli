@@ -1,0 +1,74 @@
+# docker-compose — fusion-cli 企业监控栈 (Prometheus + Alertmanager + node_exporter + Grafana)。
+# 用法:
+#   1. 编辑 prometheus.yml targets 为实际节点地址
+#   2. 编辑 alertmanager.yml 通知渠道 (webhook/email/slack)
+#   3. 各节点配 cron: `fusion metrics export > /var/lib/node_exporter/textfile/fusion.prom`
+#   4. docker-compose up -d
+# 详见 docs/ALERTING.md。
+
+version: "3.8"
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: fusion-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: fusion-alertmanager
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "9093:9093"
+    restart: unless-stopped
+
+  # node_exporter 跑在每节点本机 (非容器), 此处仅示例单节点。
+  # 多节点: 每节点装 node_exporter + textfile collector, prometheus.yml 加 targets。
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: fusion-node-exporter
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - ./textfile:/var/lib/node_exporter/textfile:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.textfile.directory=/var/lib/node_exporter/textfile
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: fusion-grafana
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:

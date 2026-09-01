@@ -5,6 +5,38 @@ All notable changes to **fusion-cli** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Enterprise operations deliverables — the non-code half of commercial
+production (ops / legal / support). Shipped as executable scripts + docs so
+operators run them directly. No CLI source changes.
+
+### Added — Enterprise Operations
+- **Load testing** (`scripts/load_test.sh`): concurrent `fusion chat` workers
+  over a duration, aggregating requests/errors/latency/RPS and checking the
+  error-rate < 5% SLO. Verifies enterprise-scale capacity before signing an SLA.
+- **Monitoring stack** (`deploy/prometheus-alertmanager/`): docker-compose
+  (Prometheus + Alertmanager + node-exporter + Grafana), `prometheus.yml`,
+  `rules/fusion-alerts.yml`, `alertmanager.yml` (channel templates). Lands the
+  ALERTING.md spec as a deployable stack.
+- **Backup & DR** (`scripts/backup.sh` + `docs/BACKUP_DR.md`): full tar of
+  `~/.fusion/` (config/KB/RAG/audit/metrics) with integrity verify + retention
+  rotation; restore procedure, RPO/RTO template, DR drill.
+- **SLA & support** (`docs/ENTERPRISE_SLA.md`): uptime/latency SLO tiers,
+  support priority + response times, escalation path, remediation credits,
+  customer responsibilities, sign-off table. Template — fill per contract.
+- **Compliance** (`docs/COMPLIANCE.md`): license posture (cargo deny
+  whitelist), security audit checklist with evidence-bundle commands, data
+  handling, compliance-gap transparency table, sign-off table.
+- **Ops runbook** (`docs/OPS_RUNBOOK.md`): single + multi-node deployment
+  topology, daily ops commands, troubleshooting SOPs by symptom (unhealthy
+  service, high error rate, latency, audit tamper, chat hang), on-call
+  escalation tiers, pre-production checklist.
+
+### Documentation
+- README.md / README_CN.md: new "Enterprise Operations" section listing all
+  6 deliverables + an enterprise-readiness status table.
+
 ## [0.4.1] - 2026-09-01
 
 Enterprise production-readiness — production-release gaps (round 4). Closes the

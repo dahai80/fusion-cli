@@ -421,6 +421,30 @@ fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*`
 
 ---
 
+## 🏢 企业运维
+
+代码之外，企业生产还需运维/法务/支持交付件。以下以可执行脚本 + 文档形式随仓提供，运维直接跑：
+
+- **规模化压测** —— `scripts/load_test.sh [并发] [持续秒] [模型]`：并发 worker 持续打 `fusion chat`，汇总请求/错误/延迟/RPS，校验 SLO（错误率 < 5%）。
+- **监控栈** —— `deploy/prometheus-alertmanager/`：`docker-compose.yml`（Prometheus + Alertmanager + node_exporter + Grafana）、`prometheus.yml`、`rules/fusion-alerts.yml`、`alertmanager.yml`（通道待填）。接线见 [`docs/ALERTING.md`](docs/ALERTING.md)（英文）。
+- **灾备备份** —— `scripts/backup.sh [保留份数]` 打包 `~/.fusion/`（config、KB、RAG、审计、metrics），校验完整性，轮转保留。恢复 + RPO/RTO 见 [`docs/BACKUP_DR.md`](docs/BACKUP_DR.md)（英文）。
+- **SLA 与支持** —— [`docs/ENTERPRISE_SLA.md`](docs/ENTERPRISE_SLA.md)（英文）：可用性/延迟 SLO 分级、支持优先级/响应、升级路径、补救条款、客户责任。模板，按合同填写。
+- **合规** —— [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md)（英文）：许可证清单（cargo deny 白名单）、安全审计 checklist、证据包命令、数据处理、签字表。
+- **运维手册** —— [`docs/OPS_RUNBOOK.md`](docs/OPS_RUNBOOK.md)（英文）：部署拓扑（单机 + 多节点目标）、日常运维、按症状排查 SOP、值班升级、上线前 checklist。
+
+### 企业就绪状态
+
+| 层 | 状态 |
+|----|------|
+| fusion-cli（本仓） | ✅ v0.4.1 —— 10 阻塞 + 4 发布缺口已闭 |
+| 服务端 HA | ⏫ fusion-mlx#754 待修 —— 阻断多节点 HA SLA |
+| 多租户隔离 | ⏫ fusion-gateway#150 待修 —— 阻断多租户 |
+| 运维/法务/支持 | ✅ 交付件已随仓（上方脚本 + 文档） |
+
+单租户/单节点企业部署现已可生产。多租户 HA 待 2 上游 issue 解决。
+
+---
+
 ## 🛣️ 路线图
 
 ### V0.1 (MVP) ✅
