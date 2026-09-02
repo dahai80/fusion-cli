@@ -16,18 +16,28 @@ SUMMARY="$LOG_DIR/summary-$TS.json"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$RUN_LOG"; }
 
+# 解析 fusion 二进制: 优先本地 release build, 其次 PATH 里的 fusion。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_BIN="$SCRIPT_DIR/../target/release/fusion"
+if [[ -x "$LOCAL_BIN" ]]; then
+    FUSION="$LOCAL_BIN"
+else
+    FUSION="$(command -v fusion || echo fusion)"
+fi
+
 log "=== fusion-cli 企业压测 开始 ==="
+log "fusion binary: $FUSION"
 log "并发: $CONCURRENCY  持续: ${DURATION}s  模型: ${MODEL:-auto}"
 
 # 健康前置: mlx 必须活着。
-if ! fusion doctor >/dev/null 2>&1; then
+if ! "$FUSION" doctor >/dev/null 2>&1; then
     log "FATAL: fusion doctor 失败 — fusion-mlx 未运行或生态不健康"
     exit 1
 fi
 
-# 取首个已加载模型 (若未指定)。
+# 取首个已加载模型 (若未指定)。走 mlx 直连 /v1/models (config mlx.base_url)。
 if [[ -z "$MODEL" ]]; then
-    MODEL="$(fusion model list --format=json 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null || true)"
+    MODEL="$(curl -s -H "Authorization: Bearer fg-admin-key" http://127.0.0.1:11434/v1/models 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["data"][0]["id"] if d.get("data") else "")' 2>/dev/null || true)"
     if [[ -z "$MODEL" ]]; then
         log "FATAL: 无已加载模型 — 先加载模型再压测"
         exit 1
@@ -36,7 +46,7 @@ if [[ -z "$MODEL" ]]; then
 fi
 
 # 启动 metrics 基线快照 (压测前)。
-fusion metrics export > "$LOG_DIR/baseline-$TS.prom" 2>/dev/null || true
+"$FUSION" metrics export > "$LOG_DIR/baseline-$TS.prom" 2>/dev/null || true
 
 # 压测: 每并发 worker 在 DURATION 内循环发 chat 请求。
 WORKER_DIR="$LOG_DIR/workers-$TS"
@@ -51,7 +61,7 @@ worker() {
     while [ "$(date +%s)" -lt "$END_AT" ]; do
         local t0 t1 ms
         t0="$(python3 -c 'import time;print(int(time.time()*1000))')"
-        if fusion chat -m "$MODEL" -p "Reply with only: ok" --no-stream >/dev/null 2>>"$f.err"; then
+        if "$FUSION" run -m "$MODEL" -p "Reply with only: ok" --no-stream >/dev/null 2>>"$f.err"; then
             t1="$(python3 -c 'import time;print(int(time.time()*1000))')"
             ms=$(( t1 - t0 ))
             lat_sum=$(( lat_sum + ms ))
@@ -98,7 +108,7 @@ PY
 
 log "汇总写入: $SUMMARY"
 log "压测后 metrics:"
-fusion metrics export > "$LOG_DIR/after-$TS.prom" 2>/dev/null || true
+"$FUSION" metrics export > "$LOG_DIR/after-$TS.prom" 2>/dev/null || true
 
 # SLO 判定。
 ERR_PCT="$(python3 -c 'import json;print(json.load(open("'"$SUMMARY"'"))["error_rate_pct"])')"

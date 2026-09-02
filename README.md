@@ -468,7 +468,7 @@ These ship as executable scripts + docs so operators run them directly:
 
 | Layer | Status |
 |-------|--------|
-| fusion-cli (this repo) | ✅ v0.4.1 — 10 blockers + 4 release gaps closed |
+| fusion-cli (this repo) | ✅ v0.4.2 — 10 blockers + 4 release gaps closed + audit-chain concurrency hardening |
 | Server-side HA | ⏫ fusion-mlx#754 open — blocks multi-node HA SLA |
 | Multi-tenant isolation | ⏫ fusion-gateway#150 open — blocks multi-tenant |
 | Ops / legal / support | ✅ deliverables shipped (scripts + docs above) |
