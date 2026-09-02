@@ -346,7 +346,7 @@ impl Default for LogConfig {
     }
 }
 
-pub const CURRENT_CONFIG_VERSION: &str = "0.4.1";
+pub const CURRENT_CONFIG_VERSION: &str = "0.4.2";
 
 impl Default for FusionConfig {
     fn default() -> Self {

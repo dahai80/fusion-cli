@@ -6,7 +6,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
+use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -87,22 +88,26 @@ pub fn compute_hash(rec: &AuditRecord) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-// 读取最后一条记录的 hash (作为下一条的 prev_hash)。空文件/解析失败 → GENESIS。
-fn last_hash(path: &std::path::Path) -> String {
-    if !path.exists() {
-        return GENESIS_HASH.to_string();
+// 跨进程互斥: flock(LOCK_EX) 排它锁整个 audit.log 文件描述符。
+// 并发 fusion run 各为独立进程, 共享 Mutex 无效; 文件锁是唯一可靠串行化手段。
+// 调用方持锁期间 read last_hash → append, 保证原子性, 防分叉链。
+fn flock_exclusive(fd: std::os::unix::io::RawFd) -> std::io::Result<()> {
+    let r = unsafe { libc::flock(fd, libc::LOCK_EX) };
+    if r == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
     }
-    if let Ok(content) = std::fs::read_to_string(path)
-        && let Some(last_line) = content.lines().next_back()
-        && let Ok(rec) = serde_json::from_str::<AuditRecord>(last_line)
-        && !rec.hash.is_empty()
-    {
-        return rec.hash;
+}
+
+fn funlock(fd: std::os::unix::io::RawFd) {
+    unsafe {
+        libc::flock(fd, libc::LOCK_UN);
     }
-    GENESIS_HASH.to_string()
 }
 
 // 追加一条审计记录。即使写入失败也不阻断主流程 (审计为旁路), 仅记 tracing::error。
+// #51 并发安全: 持 flock(LOCK_EX) 期间 read last_hash + append, 原子, 防竞态分叉链。
 pub fn record(command: &str, outcome: &str, duration_ms: u64, detail: &str) {
     let (secs, nanos) = now_unix();
     let ts = secs as f64 + nanos as f64 / 1_000_000_000.0;
@@ -113,7 +118,34 @@ pub fn record(command: &str, outcome: &str, duration_ms: u64, detail: &str) {
             return;
         }
     };
-    let prev_hash = last_hash(&path);
+    let mut f = match std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .append(true)
+        .open(&path)
+    {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!(error = %e, path = %path.display(), "audit open failed");
+            return;
+        }
+    };
+    let fd = f.as_raw_fd();
+    if let Err(e) = flock_exclusive(fd) {
+        tracing::error!(error = %e, path = %path.display(), "audit flock(LOCK_EX) failed");
+        return;
+    }
+    let prev_hash = {
+        let _u = f.seek(SeekFrom::Start(0)).ok();
+        let content = std::io::read_to_string(&mut f).unwrap_or_default();
+        content
+            .lines()
+            .next_back()
+            .and_then(|l| serde_json::from_str::<AuditRecord>(l).ok())
+            .filter(|r| !r.hash.is_empty())
+            .map(|r| r.hash)
+            .unwrap_or_else(|| GENESIS_HASH.to_string())
+    };
     let rec = AuditRecord {
         ts,
         actor: std::env::var("USER").unwrap_or_else(|_| "unknown".to_string()),
@@ -121,7 +153,7 @@ pub fn record(command: &str, outcome: &str, duration_ms: u64, detail: &str) {
         outcome: outcome.to_string(),
         duration_ms,
         detail: redact_detail(detail),
-        prev_hash: prev_hash.clone(),
+        prev_hash,
         hash: String::new(),
     };
     let mut rec = rec;
@@ -129,22 +161,18 @@ pub fn record(command: &str, outcome: &str, duration_ms: u64, detail: &str) {
     let line = match serde_json::to_string(&rec) {
         Ok(s) => s,
         Err(e) => {
+            funlock(fd);
             tracing::error!(error = %e, "audit serialize failed");
             return;
         }
     };
-    match std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
+    if let Err(e) = f
+        .seek(SeekFrom::End(0))
+        .and_then(|_| writeln!(f, "{}", line))
     {
-        Ok(mut f) => {
-            if let Err(e) = writeln!(f, "{}", line) {
-                tracing::error!(error = %e, "audit write failed");
-            }
-        }
-        Err(e) => tracing::error!(error = %e, path = %path.display(), "audit open failed"),
+        tracing::error!(error = %e, "audit write failed");
     }
+    funlock(fd);
 }
 
 // 读取最近 N 条审计记录 (fusion audit 子命令用)。
@@ -369,6 +397,66 @@ mod tests {
             msg.contains("line 2"),
             "error must point at tampered line: {}",
             msg
+        );
+    }
+
+    // #51 并发安全: 多线程同时 record() → 链不分叉, verify_chain 通过。
+    // 回归: 旧实现 last_hash+append 非原子, 并发各读同 prev_hash → 分叉链。
+    // flock(LOCK_EX) 串行化后, 每条 prev_hash 正确指向上条 hash。
+    #[test]
+    fn test_record_concurrent_no_chain_fork() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!(
+            "fusion-audit-conc-{}",
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let prev_home = std::env::var_os("HOME");
+        unsafe {
+            std::env::set_var("HOME", &tmp);
+        }
+        let n_threads = 12;
+        let per_thread = 8;
+        let handles: Vec<_> = (0..n_threads)
+            .map(|t| {
+                std::thread::spawn(move || {
+                    for i in 0..per_thread {
+                        record(
+                            &format!("cmd-{}-{}", t, i),
+                            "ok",
+                            i as u64,
+                            &format!("detail-{}-{}", t, i),
+                        );
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let res = verify_chain();
+        if let Some(h) = prev_home {
+            unsafe {
+                std::env::set_var("HOME", h);
+            }
+        }
+        let log_path = tmp.join(".fusion").join("audit").join("audit.log");
+        let count = std::fs::read_to_string(&log_path)
+            .map(|c| c.lines().filter(|l| !l.is_empty()).count())
+            .unwrap_or(0);
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(
+            count,
+            n_threads * per_thread,
+            "every concurrent record must land exactly once"
+        );
+        assert!(
+            res.is_ok(),
+            "concurrent record must not fork chain: {:?}",
+            res
         );
     }
 }

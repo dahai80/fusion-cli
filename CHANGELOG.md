@@ -7,7 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Enterprise operations deliverables — the non-code half of commercial
+## [0.4.2] - 2026-09-02
+
+Audit hash-chain hardening — fixes 2 real defects found during the v0.4.1
+load-test / DR drill (`跑实测`). 143 → 144 tests (+1 concurrency regression
+test). All gates green (fmt/test/clippy/deny).
+
+### Fixed — Audit Integrity
+- **Concurrent-write race in the audit hash chain** (#51, P0): `record()`
+  read `last_hash()` then appended non-atomically, so concurrent `fusion run`
+  workers (separate processes) each read the same `prev_hash` and forked the
+  chain. Live load test (10-20 concurrent) broke `~/.fusion/audit/audit.log`
+  at line 23. Fix: hold `flock(LOCK_EX)` across the read-last-hash + append
+  window, serializing cross-process writes so every record's `prev_hash`
+  points at the true predecessor. Verified live: 8 concurrent `fusion run` →
+  chain stays intact. `libc = "0.2"` added (already a transitive dep — no new
+  version, deny `multiple-versions` stays green).
+- **`fusion audit verify` exit code** (#51, P0): a broken chain printed
+  `❌ Audit chain BROKEN` but the process exited 0, breaking the documented
+  contract (CHANGELOG/COMPLIANCE/OPS_RUNBOOK all claim exit 1 on break, and
+  the pre-prod checklist + cron probe rely on it). Now exits 1 on a broken
+  chain. Confirmed: raw `exit=1` when chain broken, `exit=0` when intact.
+
+### Fixed — Load Test Script
+- `scripts/load_test.sh`: corrected the worker command (`fusion chat -p` was
+  interactive with no `-p`; now `fusion run -m <model> -p "..." --no-stream`),
+  added local-release-binary resolution (`$SCRIPT_DIR/../target/release/fusion`
+  with PATH fallback), and switched model discovery to the MLX direct
+  `/v1/models` endpoint (model-hub is not guaranteed running during a load
+  test).
+
+## [0.4.1] - 2026-09-01
 production (ops / legal / support). Shipped as executable scripts + docs so
 operators run them directly. No CLI source changes.
 

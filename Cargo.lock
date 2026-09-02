@@ -643,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "fusion-cli"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -660,6 +660,7 @@ dependencies = [
  "eventsource-stream",
  "futures-util",
  "indicatif",
+ "libc",
  "once_cell",
  "rand",
  "ratatui",
