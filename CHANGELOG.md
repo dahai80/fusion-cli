@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3-beta.1] - 2026-09-02
+
+First release candidate on the `beta` channel (see
+`docs/RELEASE_STRATEGY.md`). Pre-release — opt-in early adopters only; not
+for production until promoted to stable `v0.4.3`.
+
+This RC carries no schema or behavior change over v0.4.2. It exists to
+validate the beta release pipeline end-to-end (tag `v*-beta.*` → gate →
+cross-build → GitHub prerelease) and to exercise the promotion path before
+cutting stable. Config schema unchanged → `CURRENT_CONFIG_VERSION` stays
+`0.4.2` (no migration triggered).
+
+### Closed
+- **#18 (kb real vectorization)**: the `fusion kb ingest` → fusion-rag
+  routing was already shipped (offline-graceful fallback to local staging
+  when fusion-rag is not running). Issue tracked open after delivery; now
+  closed by this RC. No code change needed.
+
+### Notes
+- Single-tenant/single-node enterprise deployment remains production-ready
+  at stable **v0.4.2**. Use this beta only if you want to preview the
+  release pipeline.
+- Upstream blockers still open: fusion-mlx#754 (server HA), fusion-gateway#150
+  (multi-tenant isolation) — out of this repo's scope.
+
 ## [0.4.2] - 2026-09-02
 
 Audit hash-chain hardening — fixes 2 real defects found during the v0.4.1
