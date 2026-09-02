@@ -643,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "fusion-cli"
-version = "0.4.2"
+version = "0.4.3-beta.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
