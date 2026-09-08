@@ -181,20 +181,6 @@ enum Commands {
         action: cmd::benchsvc::EvalCommands,
     },
 
-    // ── 模型同步 ──
-    /// 模型同步（对接 fusion-multi-node Master）
-    Sync {
-        #[command(subcommand)]
-        action: cmd::sync::SyncCommands,
-    },
-
-    // ── 集群管理 ──
-    /// 集群管理
-    Cluster {
-        #[command(subcommand)]
-        action: cmd::cluster::ClusterCommands,
-    },
-
     // ── AI Agent ──
     /// AI 只读助手 (带只读工具调用: list_models/model_info/health/bench_speed)
     Agent {
@@ -313,8 +299,6 @@ fn audit_label(cmd: &Option<Commands>) -> String {
         Some(Commands::Net { .. }) => "net".to_string(),
         Some(Commands::Memory { .. }) => "memory".to_string(),
         Some(Commands::Eval { .. }) => "eval".to_string(),
-        Some(Commands::Sync { .. }) => "sync".to_string(),
-        Some(Commands::Cluster { .. }) => "cluster".to_string(),
         Some(Commands::Agent { .. }) => "agent".to_string(),
         Some(Commands::Dashboard) => "dashboard".to_string(),
     }
@@ -396,12 +380,6 @@ async fn dispatch(cli: Cli) -> anyhow::Result<()> {
         }
         Some(Commands::Eval { action }) => {
             cmd::benchsvc::handle_eval(action).await?;
-        }
-        Some(Commands::Sync { action }) => {
-            cmd::sync::handle_sync(action).await?;
-        }
-        Some(Commands::Cluster { action }) => {
-            cmd::cluster::handle_cluster(action).await?;
         }
         Some(Commands::Agent {
             prompt,

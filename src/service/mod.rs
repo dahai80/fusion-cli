@@ -7,7 +7,6 @@ pub mod kb;
 pub mod memory;
 pub mod mlx;
 pub mod modelhub;
-pub mod multinode;
 pub mod rag;
 pub mod sv;
 
@@ -89,8 +88,6 @@ pub struct ServiceUrls {
     pub memory: String,
     pub memory_api_key: String,
     pub bench: String,
-    pub multinode: String,
-    pub multinode_api_key: String,
 }
 
 impl ServiceUrls {
@@ -109,8 +106,6 @@ impl ServiceUrls {
             memory: config.memory.base_url.clone(),
             memory_api_key: config.memory.api_key.clone(),
             bench: config.bench.base_url.clone(),
-            multinode: config.multinode.base_url.clone(),
-            multinode_api_key: config.multinode.api_key.clone(),
         }
     }
 
@@ -200,7 +195,8 @@ pub async fn check_url_verbose(url: &str, timeout_secs: u64) -> (bool, String) {
 }
 
 // R3 修复: 可重试 HTTP GET。对瞬时错误 (连接拒绝 / 超时 / 5xx) 退避重试,
-// 致命错误 (URL 非法 / 4xx) 立即失败。用于 cluster/sync 跨机抖动场景。
+// 致命错误 (URL 非法 / 4xx) 立即失败。通用工具 (cluster/sync 命令已移除, 保留供未来复用)。
+#[allow(dead_code)]
 pub async fn check_url_with_retry(url: &str, timeout_secs: u64, max_retries: u32) -> bool {
     let mut delay = Duration::from_millis(200);
     for attempt in 0..=max_retries {

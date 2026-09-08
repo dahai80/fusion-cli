@@ -23,7 +23,6 @@ pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
         ("Doc", &urls.doc, "/api/health"),
         ("Memory", &urls.memory, "/healthz"),
         ("Bench", &urls.bench, "/api/v1/system/health"),
-        ("MultiNode", &urls.multinode, "/api/health"),
     ];
 
     // 并发探测所有服务, 最坏阻塞 = 单个超时 (2s), 而非串行 N×2s。
@@ -33,12 +32,7 @@ pub async fn check_all_with_latency() -> Result<Vec<ServiceStatus>> {
         async move {
             info!(service = %name, url = %health_url, "Checking service health with latency");
             let start = std::time::Instant::now();
-            // MultiNode 跨机, 网络抖动常态 → 1 次重试; 本地服务单发即止。
-            let alive = if name == "MultiNode" {
-                super::check_url_with_retry(&health_url, 2, 1).await
-            } else {
-                super::check_url(&health_url, 2).await
-            };
+            let alive = super::check_url(&health_url, 2).await;
             let elapsed = start.elapsed();
             let latency_ms = if alive {
                 Some(elapsed.as_millis() as u64)
@@ -72,7 +66,6 @@ pub async fn check_named(name: &str) -> Result<ServiceStatus> {
         "doc" => ("Doc", urls.doc.clone(), "/api/health"),
         "memory" => ("Memory", urls.memory.clone(), "/healthz"),
         "bench" => ("Bench", urls.bench.clone(), "/api/v1/system/health"),
-        "multinode" | "multi-node" => ("MultiNode", urls.multinode.clone(), "/api/health"),
         _ => anyhow::bail!("Unknown service: {}", name),
     };
     let health_url = format!("{}{}", svc_url.trim_end_matches('/'), health_path);

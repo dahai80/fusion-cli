@@ -161,7 +161,7 @@ pub async fn run() -> Result<()> {
     check_service("Fusion-Desk", desk::health_check().await.unwrap_or(false)).await;
     println!();
 
-    // 9b. 其余生态服务 (memory/bench/multinode/doc)
+    // 9b. 其余生态服务 (memory/bench/doc)
     println!("{}", "🧩 Ecosystem Services".bold());
     check_service(
         "fusion-memory",
@@ -173,13 +173,6 @@ pub async fn run() -> Result<()> {
     check_service(
         "fusion-bench",
         crate::service::benchsvc::health_check()
-            .await
-            .unwrap_or(false),
-    )
-    .await;
-    check_service(
-        "fusion-multi-node",
-        crate::service::multinode::health_check()
             .await
             .unwrap_or(false),
     )
