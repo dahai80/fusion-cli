@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.3.5-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.4.3-blue" alt="Version">
 </p>
 
 ---
@@ -295,23 +295,6 @@ HTTP client to fusion-bench service (port 11467, `/api/v1/*`). Distinct from `fu
 | `baselines` | List baselines |
 | `gates` | List quality gates |
 
-### Cluster & Sync (`fusion cluster` / `fusion sync`)
-
-Manage and sync with a fusion-multi-node Master (port 11452). Both now route to the Master directly (previously hit the MLX gateway by mistake → 404).
-
-| Command | Description |
-|---------|-------------|
-| `cluster status` | Cluster status |
-| `cluster nodes` | List registered nodes |
-| `cluster node <id>` | Node detail |
-| `cluster remove <id>` | Remove a node |
-| `cluster pending` | List pending nodes |
-| `cluster approve <id> [--approved-by]` | Approve a pending node |
-| `cluster reject <id> [--reason]` | Reject a pending node |
-| `cluster routing` | Routing summary |
-| `sync manifest <model>` | Fetch a model manifest from Master |
-| `sync incremental <model> [--source=...]` | Incremental model sync |
-
 ---
 
 ## 🔧 Architecture
@@ -335,12 +318,10 @@ src/
 │   ├── rag.rs           # fusion rag
 │   ├── doc.rs           # fusion doc (start/stop/status/log)
 │   ├── desk.rs          # fusion desk (real API calls)
-│   ├── sync.rs          # fusion sync (model sync via multi-node Master)
 │   ├── guard.rs         # fusion guard (UDS JSON-RPC status/rules/audit)
 │   ├── net.rs           # fusion net (forward to fusion-supervisor UDS)
 │   ├── memory.rs        # fusion memory (fm-server HTTP client)
-│   ├── benchsvc.rs      # fusion eval (fusion-bench HTTP client)
-│   └── cluster.rs       # fusion cluster (multi-node Master)
+│   └── benchsvc.rs      # fusion eval (fusion-bench HTTP client)
 ├── service/             # Unified service layer
 │   ├── mod.rs           # Global reqwest::Client + ServiceUrls + check_url()
 │   ├── mlx.rs           # MLX inference client (chat, stream, embed, bench, health)
@@ -354,7 +335,6 @@ src/
 │   ├── sv.rs            # Supervisor UDS client (JSON-RPC ping/status/up/down/restart)
 │   ├── memory.rs        # fm-server client (retrieve/commit/delete/audit, Bearer)
 │   ├── benchsvc.rs      # fusion-bench client (tasks/suites/results/gates/baselines)
-│   ├── multinode.rs     # multi-node Master client (nodes/cluster/routing/sync)
 │   └── health.rs        # Unified health check (check_all, check_all_with_latency)
 ├── tui/                 # TUI dashboard (V0.2.1)
 │   ├── mod.rs           # Event loop + terminal setup
@@ -392,7 +372,6 @@ fusion-mlx inference routes through the gateway (`http://localhost:11432`, OpenA
 | Fusion-Memory | `http://localhost:11435` | `memory.base_url` |
 | Fusion-Memory API key | _(no default)_ | `memory.api_key` |
 | Fusion-Bench | `http://localhost:11467` | `bench.base_url` |
-| Fusion-MultiNode | `http://localhost:11452` | `multinode.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
 
 ---
@@ -561,7 +540,13 @@ Multi-tenant HA awaits the 2 upstream issues.
 - [x] Dead code removed (`OutputFormat`, `check_all`, `ContextManager::clear`); `LoopStats` wired in
 - [x] Test count 71 → 91 (risk-path coverage: path traversal, IPv6 port, context trim)
 
+### V0.4.3 — Single-Machine Scope ✅
+- [x] Promoted `v0.4.3-beta.1` RC to stable
+- [x] Removed `fusion cluster`/`fusion sync` and the multinode service client (#25) — multi-node ops move to fusion-multi-node's own tooling
+- [x] `MultinodeConfig` kept in config parsing for backward compatibility only
+
 ### V0.4 (Future)
+- [ ] Distributed node management (via fusion-multi-node tooling, not this CLI)
 - [ ] Distributed node management
 - [ ] One-click ecosystem deployment
 - [ ] Full CI/CD local AI pipeline

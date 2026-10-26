@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.3.5-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.4.3-blue" alt="Version">
 </p>
 
 ---
@@ -295,23 +295,6 @@ fusion completions zsh
 | `baselines` | 基线列表 |
 | `gates` | 质量门列表 |
 
-### 集群与同步（`fusion cluster` / `fusion sync`）
-
-管理与同步 fusion-multi-node Master（端口 11452）。两者现已直连 Master（此前误连 MLX 网关 → 404）。
-
-| 命令 | 说明 |
-|---------|-------------|
-| `cluster status` | 集群状态 |
-| `cluster nodes` | 列出已注册节点 |
-| `cluster node <id>` | 节点详情 |
-| `cluster remove <id>` | 移除节点 |
-| `cluster pending` | 待审批节点列表 |
-| `cluster approve <id> [--approved-by]` | 批准待审批节点 |
-| `cluster reject <id> [--reason]` | 拒绝待审批节点 |
-| `cluster routing` | 路由汇总 |
-| `sync manifest <model>` | 从 Master 拉取模型清单 |
-| `sync incremental <model> [--source=...]` | 增量模型同步 |
-
 ---
 
 ## 🔧 架构
@@ -335,12 +318,10 @@ src/
 │   ├── rag.rs           # fusion rag
 │   ├── doc.rs           # fusion doc（start/stop/status/log）
 │   ├── desk.rs          # fusion desk（真实 API 调用）
-│   ├── sync.rs          # fusion sync（经 multi-node Master 同步）
 │   ├── guard.rs         # fusion guard（UDS JSON-RPC status/rules/audit）
 │   ├── net.rs           # fusion net（转发 fusion-supervisor UDS）
 │   ├── memory.rs        # fusion memory（fm-server HTTP 客户端）
 │   ├── benchsvc.rs      # fusion eval（fusion-bench HTTP 客户端）
-│   └── cluster.rs       # fusion cluster（multi-node Master）
 ├── service/             # 统一服务层
 │   ├── mod.rs           # 全局 reqwest::Client + ServiceUrls + check_url()
 │   ├── mlx.rs           # MLX 推理客户端（chat, stream, embed, bench, health）
@@ -354,7 +335,6 @@ src/
 │   ├── sv.rs            # Supervisor UDS 客户端（JSON-RPC ping/status/up/down/restart）
 │   ├── memory.rs        # fm-server 客户端（retrieve/commit/delete/audit, Bearer）
 │   ├── benchsvc.rs      # fusion-bench 客户端（tasks/suites/results/gates/baselines）
-│   ├── multinode.rs     # multi-node Master 客户端（nodes/cluster/routing/sync）
 │   └── health.rs        # 统一健康检查（check_all, check_all_with_latency）
 ├── tui/                 # TUI 仪表盘（V0.2.1）
 │   ├── mod.rs           # 事件循环 + 终端设置
@@ -392,7 +372,6 @@ fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*`
 | Fusion-Memory | `http://localhost:11435` | `memory.base_url` |
 | Fusion-Memory 密钥 | _(无默认值)_ | `memory.api_key` |
 | Fusion-Bench | `http://localhost:11467` | `bench.base_url` |
-| Fusion-MultiNode | `http://localhost:11452` | `multinode.base_url` |
 | Gateway | `http://localhost:11432` | `gateway.base_url` |
 
 ---
@@ -528,8 +507,13 @@ fusion-mlx 推理通过网关（`http://localhost:11432`，OpenAI 兼容 `/v1/*`
 - [x] 清理死代码（`OutputFormat`、`check_all`、`ContextManager::clear`）；`LoopStats` 接入主循环
 - [x] 测试数 71 → 91（风险路径覆盖：路径穿越、IPv6 端口、上下文裁剪）
 
+### V0.4.3 — 单机定位 ✅
+- [x] `v0.4.3-beta.1` RC 晋升稳定版
+- [x] 移除 `fusion cluster`/`fusion sync` 及 multinode 服务客户端（#25）— 多节点操作改由 fusion-multi-node 自身工具承担
+- [x] `MultinodeConfig` 仅保留向后兼容的配置解析
+
 ### V0.4（未来）
-- [ ] 分布式节点管理
+- [ ] 分布式节点管理（经 fusion-multi-node 工具，非本 CLI）
 - [ ] 一键生态部署
 - [ ] 完整 CI/CD 本地 AI 流水线
 - [ ] 代理自修复循环
