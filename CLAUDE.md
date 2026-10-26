@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cargo build --release          # Binary: target/release/fusion
 cargo run -- <subcommand>      # Run in dev mode
 cargo test                     # 139 tests + 3 ignored, all in #[cfg(test)] blocks (no tests/ dir)
+                               # Regenerate the count above: cargo test 2>&1 | grep "test result"
 cargo check --all-targets      # Type-check incl. tests/benches
 cargo fmt --all -- --check     # Format check (CI enforces)
 cargo clippy --all-targets -- -D warnings   # Lint, warnings = errors (CI enforces)

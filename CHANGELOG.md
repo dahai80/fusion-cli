@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-26
+
+Documentation-only patch. No code change; config schema unchanged →
+`CURRENT_CONFIG_VERSION` stays `0.4.2` (no migration triggered).
+
+### Documentation
+
+- CLAUDE.md: add test-count regeneration hint next to the `cargo test`
+  command (closes #28 — requirement 2 of #26 dropped in #27)
+
 ## [0.4.3] - 2026-10-26
 
 Stable promotion of the `v0.4.3-beta.1` RC. First stable release on the
