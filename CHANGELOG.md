@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-26
+
+Stable promotion of the `v0.4.3-beta.1` RC. First stable release on the
+single-machine scope. Config schema unchanged → `CURRENT_CONFIG_VERSION`
+stays `0.4.2` (no migration triggered).
+
+### Changed
+
+- **Single-machine scope** (#25): removed `fusion sync` and `fusion cluster`
+  commands and the `service/multinode.rs` client. `MultinodeConfig` remains
+  in config parsing for backward compatibility only. Multi-node sync now
+  happens out-of-band via fusion-multi-node's own tooling, not this CLI.
+- README / README_CN version badges resynced (were stale at 0.3.5).
+
+### Documentation
+
+- CLAUDE.md refreshed for post-#25 reality: subcommand inventory, audit
+  chain flock constraint, ops & release section.
+
 ## [0.4.3-beta.1] - 2026-09-02
 
 First release candidate on the `beta` channel (see
