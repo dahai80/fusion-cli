@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build --release          # Binary: target/release/fusion
 cargo run -- <subcommand>      # Run in dev mode
-cargo test                     # 139 tests + 3 ignored, all in #[cfg(test)] blocks (no tests/ dir)
+cargo test                     # 147 tests + 3 ignored, all in #[cfg(test)] blocks (no tests/ dir)
                                # Regenerate the count above: cargo test 2>&1 | grep "test result"
 cargo check --all-targets      # Type-check incl. tests/benches
 cargo fmt --all -- --check     # Format check (CI enforces)
@@ -46,7 +46,7 @@ Non-streaming chat (`chat_completion`) transparently aggregates SSE if the gatew
 
 ### Subcommand Groups
 
-Standalone: `version`, `doctor`, `init`, `completions`, `dashboard` (TUI)
+Standalone: `version`, `doctor` (one-shot health check: workspace check-ports/check-env aggregation, gateway+client-key probe, port-registry drift, profile precheck; `--root`, `--prod`; exits non-zero on hard failures), `init`, `completions`, `dashboard` (TUI)
 Management: `config`, `audit` (compliance read-only trail), `metrics` (observability snapshot), `log`
 Model + inference: `model` (list/pull/info/delete/clean/convert/quant), `chat`/`run`/`code`/`embed` (SSE streaming via eventsource-stream)
 Knowledge: `kb` (CRUD + ingest/query), `rag` (start/stop/status/search/list)

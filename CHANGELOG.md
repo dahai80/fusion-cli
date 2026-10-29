@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-10-30
+### Added
+- `fusion doctor` one-shot environment health check (closes #30, config governance Phase 3.2):
+  - Workspace governance: invokes `scripts/check-ports.py` + `scripts/check-env.py` (aggregated, not reimplemented — run concurrently, drift FAIL entries surfaced verbatim; check-env verdict includes legacy-key grace countdown, e.g. `legacy warns: N (escalate to error on 2027-01-01)`)
+  - Gateway connectivity + client key validity probe (`GET /v1/models`); 401 names the key provenance and remediation (`FUSION_CLIENT_KEY` from gateway admin API); connection refused prints an explicit "gateway not running" hint
+  - Client key resolution chain: `FUSION_CLIENT_KEY` env → fusion-core `client_key()` (single-point Python resolver, venv python preferred) → `config mlx.api_key`
+  - Profile precheck: reports active `FUSION_PROFILE` (default `dev`, lenient); `fusion doctor --prod` fails fast (non-zero exit) when required keys are missing
+  - New flags: `--root <PATH>` (workspace root, default `~/fusion`, env `FUSION_WORKSPACE_ROOT`) and `--prod`
+  - Doctor now exits non-zero on hard failures (gateway down / key rejected / port-registry conflicts); check-env repo-hygiene debt stays informational (owned by CI)
+- 8 unit tests for the doctor governance helpers (147 total)
+
+### Fixed
+- Local environment: stale `fg-admin-key` (rejected by gateway, HTTP 401) replaced with the gateway-issued admin key in `~/.fusion/config.toml` and `~/.zshrc`
+
 ## [0.4.4] - 2026-10-26
 
 Documentation-only patch. No code change; config schema unchanged →

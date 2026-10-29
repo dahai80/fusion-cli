@@ -53,7 +53,10 @@ enum Commands {
     /// 查看版本信息
     Version,
     /// 环境自检
-    Doctor,
+    Doctor {
+        #[command(flatten)]
+        args: cmd::doctor::DoctorArgs,
+    },
     /// 初始化 Fusion 环境
     Init,
     /// 生成 Shell 补全脚本
@@ -277,7 +280,7 @@ fn audit_label(cmd: &Option<Commands>) -> String {
     match cmd {
         None => "help".to_string(),
         Some(Commands::Version) => "version".to_string(),
-        Some(Commands::Doctor) => "doctor".to_string(),
+        Some(Commands::Doctor { .. }) => "doctor".to_string(),
         Some(Commands::Init) => "init".to_string(),
         Some(Commands::Completions { .. }) => "completions".to_string(),
         Some(Commands::Config { .. }) => "config".to_string(),
@@ -315,8 +318,8 @@ async fn dispatch(cli: Cli) -> anyhow::Result<()> {
         Some(Commands::Version) => {
             cmd::version::run().await?;
         }
-        Some(Commands::Doctor) => {
-            cmd::doctor::run().await?;
+        Some(Commands::Doctor { args }) => {
+            cmd::doctor::run(args).await?;
         }
         Some(Commands::Init) => {
             cmd::init::run_init().await?;
