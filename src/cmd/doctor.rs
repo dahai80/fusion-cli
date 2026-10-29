@@ -1,9 +1,25 @@
-use crate::service::{desk, kb, mlx, modelhub, rag};
-use anyhow::Result;
+use crate::service::{desk, get_client, kb, mlx, modelhub, rag};
+use anyhow::{Result, anyhow};
+use clap::Args as ClapArgs;
 use colored::*;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 use sysinfo::{Components, Disks, Networks, System};
+use tracing::{error, info};
 
-pub async fn run() -> Result<()> {
+// #30 (config Phase 3.2): 一次性环境体检参数。
+#[derive(Debug, Clone, ClapArgs)]
+pub struct DoctorArgs {
+    /// Workspace 根目录 (默认 ~/fusion, 可用 FUSION_WORKSPACE_ROOT 覆盖)
+    #[arg(long, value_name = "PATH")]
+    pub root: Option<String>,
+
+    /// prod profile 预检: 缺失必需 key 时非零退出
+    #[arg(long, default_value_t = false)]
+    pub prod: bool,
+}
+
+pub async fn run(args: DoctorArgs) -> Result<()> {
     println!();
     println!("{}", "🔍 Fusion Environment Doctor".bold());
     println!(
@@ -229,6 +245,220 @@ pub async fn run() -> Result<()> {
     }
     println!();
 
+    // 9d. #30 (config Phase 3.2) workspace 治理体检 — 聚合已有 checker, 不重复实现检查逻辑。
+    let root = workspace_root(&args.root);
+    println!(
+        "{}",
+        "🧪 Workspace Governance (check-ports / check-env)".bold()
+    );
+    println!(
+        "  {} Workspace root: {}",
+        "ℹ️".blue(),
+        root.display().to_string().cyan()
+    );
+    let venv_python = root.join(".venv/bin/python");
+    let python: PathBuf = if venv_python.exists() {
+        venv_python
+    } else {
+        PathBuf::from("python3")
+    };
+    let mut hard_failures: Vec<String> = Vec::new();
+
+    // 双 checker 全仓扫描实测 4-7 分钟 (business/ 目录增长), 并发执行压缩 wall time。
+    println!(
+        "  {} Running workspace checkers (full-repo scan, may take several minutes)...",
+        "ℹ️".blue()
+    );
+    let ports_script = root.join("scripts/check-ports.py");
+    let env_script = root.join("scripts/check-env.py");
+    let (ports_res, env_res) = tokio::join!(
+        run_checker_opt(&python, &ports_script, Duration::from_secs(600)),
+        run_checker_opt(&python, &env_script, Duration::from_secs(900)),
+    );
+
+    // ① + ③ check-ports.py: 注册表冲突 + 代码端口 vs registry 漂移 (FAIL 行即漂移条目)。
+    match ports_res {
+        CheckerOutcome::Done(code, out) => {
+            let fails = count_tagged(&out, "FAIL:");
+            let warns = count_tagged(&out, "WARN:");
+            match code {
+                0 => println!(
+                    "  {} check-ports: PASS (0 errors, 0 warnings)",
+                    "✅".green()
+                ),
+                2 => println!(
+                    "  {} check-ports: PASS with {} migration warning(s)",
+                    "⚠️".yellow(),
+                    warns
+                ),
+                _ => {
+                    println!(
+                        "  {} check-ports: FAIL — {} error(s), {} warning(s)",
+                        "❌".red(),
+                        fails,
+                        warns
+                    );
+                    for line in out.lines().filter(|l| l.contains("FAIL:")).take(5) {
+                        println!("     {}", line.trim().red());
+                    }
+                    hard_failures.push("check-ports: registry drift/conflict detected".into());
+                }
+            }
+        }
+        CheckerOutcome::Timeout => {
+            error!("check-ports timed out");
+            println!("  {} check-ports: timed out after 600s", "❌".red());
+            hard_failures.push("check-ports: timed out".into());
+        }
+        CheckerOutcome::Missing => println!(
+            "  {} check-ports.py not found at {} — skipped",
+            "⚠️".yellow(),
+            ports_script.display()
+        ),
+    }
+
+    // ① check-env.py: 变量名/裸色值/硬编码 secret 扫描 + legacy 宽限倒计时。
+    // 仓库卫生债由 CI 门禁跟踪, doctor 只报计数不阻断退出码。
+    match env_res {
+        CheckerOutcome::Done(code, out) => {
+            let (errs, baselined, warns) = parse_check_env_summary(&out).unwrap_or((0, 0, 0));
+            if code == 0 {
+                println!(
+                    "  {} check-env: PASS (0 errors, {} warn(s))",
+                    "✅".green(),
+                    warns
+                );
+            } else {
+                println!(
+                    "  {} check-env: {} error(s), {} baselined, {} warn(s) — repo hygiene debt tracked in CI",
+                    "⚠️".yellow(),
+                    errs,
+                    baselined,
+                    warns
+                );
+            }
+            let legacy = count_legacy_warns(&out);
+            if legacy > 0 {
+                println!(
+                    "  {} legacy warns: {} (escalate to error on 2027-01-01)",
+                    "ℹ️".blue(),
+                    legacy
+                );
+            }
+        }
+        CheckerOutcome::Timeout => {
+            error!("check-env timed out");
+            println!("  {} check-env: timed out after 900s", "❌".red());
+        }
+        CheckerOutcome::Missing => println!(
+            "  {} check-env.py not found at {} — skipped",
+            "⚠️".yellow(),
+            env_script.display()
+        ),
+    }
+    println!();
+
+    // ② gateway 连通性 + client key 有效性 (env FUSION_GATEWAY_BASE_URL 可覆盖)。
+    println!("{}", "🚪 Gateway Connectivity & Client Key".bold());
+    let gw_base = gateway_base_url();
+    let (client_key, key_src) = resolve_client_key(&root).await;
+    let probe_url = format!("{}/v1/models", gw_base.trim_end_matches('/'));
+    info!(url = %probe_url, key_source = %key_src, "probing gateway");
+    match get_client()
+        .get(&probe_url)
+        .header("Authorization", format!("Bearer {}", client_key))
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => println!(
+            "  {} Gateway reachable at {} — client key valid (via {})",
+            "✅".green(),
+            gw_base.cyan(),
+            key_src.cyan()
+        ),
+        Ok(resp) if resp.status().as_u16() == 401 || resp.status().as_u16() == 403 => {
+            println!(
+                "  {} Gateway at {} rejected the client key (HTTP {})",
+                "❌".red(),
+                gw_base.cyan(),
+                resp.status().as_u16()
+            );
+            println!(
+                "     The key is a gateway-issued client key — get it from the gateway admin API and export it as {}",
+                "FUSION_CLIENT_KEY".cyan()
+            );
+            println!("     Current key source: {}", key_src.cyan());
+            hard_failures.push("gateway: client key rejected (401/403)".into());
+        }
+        Ok(resp) => println!(
+            "  {} Gateway at {} returned unexpected HTTP {}",
+            "⚠️".yellow(),
+            gw_base.cyan(),
+            resp.status().as_u16()
+        ),
+        Err(e) if e.is_connect() => {
+            println!(
+                "  {} Gateway not running at {} — connection refused",
+                "❌".red(),
+                gw_base.cyan()
+            );
+            println!(
+                "     Start with: {}",
+                "fusion-gateway start.sh (port 11432)".cyan()
+            );
+            hard_failures.push("gateway: not running".into());
+        }
+        Err(e) => {
+            error!(error = %e, "gateway probe failed");
+            println!("  {} Gateway probe failed: {}", "⚠️".yellow(), e);
+        }
+    }
+    println!();
+
+    // ④ FUSION_PROFILE + 缺失 key 预检: prod (env 或 --prod) 缺必需 key → fail fast。
+    println!("{}", "🎭 Profile Precheck (FUSION_PROFILE)".bold());
+    let profile = std::env::var("FUSION_PROFILE").unwrap_or_else(|_| "dev".to_string());
+    let prod_mode = args.prod || profile == "prod";
+    if prod_mode {
+        let required = ["FUSION_CLIENT_KEY"];
+        let missing: Vec<&str> = required
+            .iter()
+            .filter(|k| std::env::var(*k).map(|v| v.is_empty()).unwrap_or(true))
+            .copied()
+            .collect();
+        if missing.is_empty() {
+            println!(
+                "  {} Profile: prod — required key(s) present ({})",
+                "✅".green(),
+                required.join(", ").cyan()
+            );
+        } else {
+            for k in &missing {
+                println!(
+                    "  {} prod profile: required key {} not set",
+                    "❌".red(),
+                    k.cyan()
+                );
+                println!(
+                    "     Get it from the gateway admin API, export as {}, see architecture/config-conventions.md",
+                    k.cyan()
+                );
+            }
+            hard_failures.push(format!(
+                "prod profile: missing required key(s): {}",
+                missing.join(", ")
+            ));
+        }
+    } else {
+        println!(
+            "  {} Profile: {} (lenient — missing keys allowed)",
+            "✅".green(),
+            profile.cyan()
+        );
+    }
+    println!();
+
     // 10. 依赖完整性 + 版本
     println!("{}", "📦 Dependency Check".bold());
     println!("  {} Rust toolchain: stable", "✅".green());
@@ -394,8 +624,143 @@ pub async fn run() -> Result<()> {
     }
     println!();
 
-    println!("{}", "✅ Doctor check complete.".green().bold());
-    Ok(())
+    println!();
+    if hard_failures.is_empty() {
+        println!("{}", "✅ Doctor check complete.".green().bold());
+        Ok(())
+    } else {
+        println!("{}", "❌ Doctor found hard failure(s):".red().bold());
+        for f in &hard_failures {
+            println!("  {} {}", "❌".red(), f);
+        }
+        Err(anyhow!("doctor: {} hard failure(s)", hard_failures.len()))
+    }
+}
+
+// workspace 根解析: --root > FUSION_WORKSPACE_ROOT > ~/fusion。
+fn workspace_root(flag: &Option<String>) -> PathBuf {
+    if let Some(r) = flag {
+        return PathBuf::from(r);
+    }
+    if let Ok(r) = std::env::var("FUSION_WORKSPACE_ROOT")
+        && !r.is_empty()
+    {
+        return PathBuf::from(r);
+    }
+    dirs::home_dir().unwrap_or_default().join("fusion")
+}
+
+// gateway 探活地址: FUSION_GATEWAY_BASE_URL > config mlx.base_url (默认即网关 11432)。
+fn gateway_base_url() -> String {
+    if let Ok(u) = std::env::var("FUSION_GATEWAY_BASE_URL")
+        && !u.is_empty()
+    {
+        return u;
+    }
+    crate::config::load_config().mlx.base_url.clone()
+}
+
+// client key 解析链: env FUSION_CLIENT_KEY > fusion-core client_key() (Python 单点解析,
+// venv python 优先) > config mlx.api_key。返回 (key, 来源描述) — 永不打印 key 值本身。
+async fn resolve_client_key(root: &Path) -> (String, String) {
+    if let Ok(k) = std::env::var("FUSION_CLIENT_KEY")
+        && !k.is_empty()
+    {
+        return (k, "env FUSION_CLIENT_KEY".to_string());
+    }
+    let venv_python = root.join(".venv/bin/python");
+    let py: PathBuf = if venv_python.exists() {
+        venv_python
+    } else {
+        PathBuf::from("python3")
+    };
+    let code = "import sys; sys.path.insert(0, sys.argv[1]); from fusion_core.config import client_key; print(client_key())";
+    let out = tokio::process::Command::new(&py)
+        .arg("-c")
+        .arg(code)
+        .arg(root.join("fusion-core"))
+        .output()
+        .await;
+    if let Ok(out) = out {
+        let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if out.status.success() && !v.is_empty() && !out.stdout.is_empty() {
+            return (v, "fusion-core client_key()".to_string());
+        }
+    }
+    let cfg = crate::config::load_config();
+    (
+        cfg.mlx.api_key.clone(),
+        "config mlx.api_key (gateway-issued default)".to_string(),
+    )
+}
+
+// checker 执行结果: 脚本缺失 / 超时 / 完成 (exit_code + 合并输出)。
+enum CheckerOutcome {
+    Missing,
+    Timeout,
+    Done(i32, String),
+}
+
+async fn run_checker_opt(python: &Path, script: &Path, timeout: Duration) -> CheckerOutcome {
+    if !script.exists() {
+        return CheckerOutcome::Missing;
+    }
+    info!(script = %script.display(), "running workspace checker");
+    match run_checker(python, script, timeout).await {
+        Some((code, out)) => CheckerOutcome::Done(code, out),
+        None => CheckerOutcome::Timeout,
+    }
+}
+
+// 执行 workspace checker, stdout+stderr 合并返回 (exit_code, output); 超时/启动失败返回 None。
+async fn run_checker(python: &Path, script: &Path, timeout: Duration) -> Option<(i32, String)> {
+    let fut = tokio::process::Command::new(python).arg(script).output();
+    match tokio::time::timeout(timeout, fut).await {
+        Ok(Ok(out)) => {
+            let mut combined = String::from_utf8_lossy(&out.stdout).to_string();
+            combined.push('\n');
+            combined.push_str(&String::from_utf8_lossy(&out.stderr));
+            Some((out.status.code().unwrap_or(-1), combined))
+        }
+        Ok(Err(e)) => {
+            error!(error = %e, script = %script.display(), "checker spawn failed");
+            None
+        }
+        Err(_) => None,
+    }
+}
+
+// 解析 check-env 汇总行 "check-env: N error(s), M baselined, K warn(s)" → (N, M, K)。
+fn parse_check_env_summary(output: &str) -> Option<(usize, usize, usize)> {
+    let line = output
+        .lines()
+        .rev()
+        .find(|l| l.contains("check-env: ") && l.contains("error(s)"))?;
+    let nums: Vec<usize> = line
+        .split_whitespace()
+        .filter_map(|t| {
+            t.trim_matches(|c: char| !c.is_ascii_digit())
+                .parse::<usize>()
+                .ok()
+        })
+        .collect();
+    if nums.len() >= 3 {
+        Some((nums[0], nums[1], nums[2]))
+    } else {
+        None
+    }
+}
+
+// legacy 宽限 warn = 带 "升 error" 倒计时的 WARN 行 (Phase 3.1)。
+fn count_legacy_warns(output: &str) -> usize {
+    output
+        .lines()
+        .filter(|l| l.starts_with("WARN") && l.contains("升 error"))
+        .count()
+}
+
+fn count_tagged(output: &str, tag: &str) -> usize {
+    output.lines().filter(|l| l.contains(tag)).count()
 }
 
 async fn check_service(name: &str, alive: bool) {
@@ -409,5 +774,66 @@ async fn check_service(name: &str, alive: bool) {
             name.to_lowercase(),
             "(or `fusion service start all`)".dimmed()
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_check_env_summary() {
+        let out = "WARN  [x] y\nERROR [z] w\n\ncheck-env: 55 error(s), 3 baselined, 76 warn(s)\n";
+        assert_eq!(parse_check_env_summary(out), Some((55, 3, 76)));
+    }
+
+    #[test]
+    fn test_parse_check_env_summary_zero() {
+        let out = "check-env: 0 error(s), 0 baselined, 12 warn(s)\n";
+        assert_eq!(parse_check_env_summary(out), Some((0, 0, 12)));
+    }
+
+    #[test]
+    fn test_parse_check_env_summary_missing() {
+        assert_eq!(parse_check_env_summary("no summary here"), None);
+    }
+
+    #[test]
+    fn test_count_legacy_warns() {
+        let out = "WARN  [legacy] FUSION_MLX_API_KEY（迁移期，63 天后 2027-01-01 升 error）\n\
+                   WARN  [gui-hex] 裸色值 #fff\n\
+                   BASELINE-WARN  [old] x 升 error\n";
+        assert_eq!(count_legacy_warns(out), 1);
+    }
+
+    #[test]
+    fn test_count_tagged() {
+        let out = "FAIL: a\nFAIL: b\nWARN: c\n";
+        assert_eq!(count_tagged(out, "FAIL:"), 2);
+        assert_eq!(count_tagged(out, "WARN:"), 1);
+    }
+
+    #[test]
+    fn test_workspace_root_flag_override() {
+        assert_eq!(
+            workspace_root(&Some("/tmp/fusion".to_string())),
+            PathBuf::from("/tmp/fusion")
+        );
+    }
+
+    #[test]
+    fn test_workspace_root_default_is_home_fusion() {
+        let root = workspace_root(&None);
+        assert!(root.ends_with("fusion"), "expected ~/fusion, got {root:?}");
+    }
+
+    #[test]
+    fn test_doctor_args_defaults() {
+        let a = DoctorArgs {
+            root: None,
+            prod: false,
+        };
+        assert!(!a.prod);
+        assert!(a.root.is_none());
     }
 }
