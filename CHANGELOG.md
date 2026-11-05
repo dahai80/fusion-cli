@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-11-05
+### Added
+- `fusion install <id>` on-demand module install from the gateway catalog (closes #32):
+  - Fetches the entry from `GET /v1/catalog` (client-key candidate chain with 401 fallthrough; bundled catalog snapshot fallback for offline/gateway-down), routes ai-* ids to `~/fusion/business/` and everything else to `~/fusion/`
+  - Idempotent: re-install with the same repo origin is a safe no-op; a foreign origin or non-clone directory is a hard error
+  - Git clone with automatic https→ssh fallback for networks that block HTTPS to github.com; partial clones are cleaned up on failure
+  - `--with-deps` runs the language-appropriate bootstrap: pyproject.toml → workspace venv (created on a clean machine) + fusion-core provisioning + `pip install -e` via the aliyun mirror (respects `PIP_INDEX_URL`); Cargo.toml → `cargo build --release`; package.json → `bun install` (npm fallback)
+- `fusion list`: catalog view with installed state (workspace scan) and running state (supervisor status, best-effort); `--format=json` supported
+- 10 new unit tests (routing, catalog snapshot, URL normalization/ssh conversion, origin detection, JSON purity) — 157 total
+
 ## [0.4.5] - 2026-10-30
 ### Added
 - `fusion doctor` one-shot environment health check (closes #30, config governance Phase 3.2):

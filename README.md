@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.4.5-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.4.6-blue" alt="Version">
 </p>
 
 ---
@@ -115,6 +115,8 @@ fusion completions zsh
 |---------|-------------|
 | `fusion version` | Show version info for all ecosystem components |
 | `fusion doctor` | Full environment diagnostic (system, MLX, KB, ModelHub, RAG, Desk) |
+| `fusion install <id>` | Install a module from the catalog (git clone; `--with-deps` runs the language bootstrap) |
+| `fusion list` | List catalog modules with installed/running state |
 | `fusion init` | Initialize Fusion environment (dirs, config, health check) |
 | `fusion completions <shell>` | Generate shell completion scripts (bash/zsh/fish/elvish/powershell) |
 | `fusion dashboard` | Launch interactive TUI dashboard |
