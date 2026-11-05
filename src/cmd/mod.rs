@@ -9,6 +9,7 @@ pub mod doc;
 pub mod doctor;
 pub mod guard;
 pub mod init;
+pub mod install;
 pub mod kb;
 pub mod log;
 pub mod memory;

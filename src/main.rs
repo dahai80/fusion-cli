@@ -156,6 +156,18 @@ enum Commands {
         action: cmd::doc::DocCommands,
     },
 
+    // ── 模块安装 ──
+    /// 按目录安装模块（catalog 克隆 + 可选依赖引导）
+    Install {
+        #[command(flatten)]
+        args: cmd::install::InstallArgs,
+    },
+    /// 列出目录模块（已安装 vs 可用）
+    List {
+        #[command(flatten)]
+        args: cmd::install::ListArgs,
+    },
+
     // ── Guard 安全守护 ──
     /// Guard 安全守护查询（经 UDS，只读 status/rules/audit）
     Guard {
@@ -298,6 +310,8 @@ fn audit_label(cmd: &Option<Commands>) -> String {
         Some(Commands::Rag { .. }) => "rag".to_string(),
         Some(Commands::Desk { .. }) => "desk".to_string(),
         Some(Commands::Doc { .. }) => "doc".to_string(),
+        Some(Commands::Install { .. }) => "install".to_string(),
+        Some(Commands::List { .. }) => "list".to_string(),
         Some(Commands::Guard { .. }) => "guard".to_string(),
         Some(Commands::Net { .. }) => "net".to_string(),
         Some(Commands::Memory { .. }) => "memory".to_string(),
@@ -371,6 +385,12 @@ async fn dispatch(cli: Cli) -> anyhow::Result<()> {
         }
         Some(Commands::Doc { action }) => {
             cmd::doc::handle_doc(action).await?;
+        }
+        Some(Commands::Install { args }) => {
+            cmd::install::run_install(args).await?;
+        }
+        Some(Commands::List { args }) => {
+            cmd::install::run_list(args).await?;
         }
         Some(Commands::Guard { action }) => {
             cmd::guard::handle_guard(action).await?;

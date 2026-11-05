@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Backend-fusion--mlx--only-important" alt="fusion-mlx">
-  <img src="https://img.shields.io/badge/version-0.4.5-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.4.6-blue" alt="Version">
 </p>
 
 ---
@@ -115,6 +115,8 @@ fusion completions zsh
 |------|------|
 | `fusion version` | 显示所有生态组件版本信息 |
 | `fusion doctor` | 完整环境诊断（系统、MLX、KB、ModelHub、RAG、Desk） |
+| `fusion install <id>` | 从目录安装模块（git 克隆；`--with-deps` 执行语言引导） |
+| `fusion list` | 列出目录模块及安装/运行状态 |
 | `fusion init` | 初始化 Fusion 环境（目录、配置、健康检查） |
 | `fusion completions <shell>` | 生成 Shell 补全脚本（bash/zsh/fish/elvish/powershell） |
 | `fusion dashboard` | 启动交互式 TUI 仪表盘 |

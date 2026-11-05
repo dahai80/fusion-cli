@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build --release          # Binary: target/release/fusion
 cargo run -- <subcommand>      # Run in dev mode
-cargo test                     # 147 tests + 3 ignored, all in #[cfg(test)] blocks (no tests/ dir)
+cargo test                     # 157 tests + 3 ignored, all in #[cfg(test)] blocks (no tests/ dir)
                                # Regenerate the count above: cargo test 2>&1 | grep "test result"
 cargo check --all-targets      # Type-check incl. tests/benches
 cargo fmt --all -- --check     # Format check (CI enforces)
@@ -51,7 +51,7 @@ Management: `config`, `audit` (compliance read-only trail), `metrics` (observabi
 Model + inference: `model` (list/pull/info/delete/clean/convert/quant), `chat`/`run`/`code`/`embed` (SSE streaming via eventsource-stream)
 Knowledge: `kb` (CRUD + ingest/query), `rag` (start/stop/status/search/list)
 Bench: `bench` (speed/mem/ctx/auto via MLX API), `eval` (fusion-bench HTTP service :11467)
-Ecosystem: `service`, `doc`, `desk`, `guard` (fusion-guard UDS JSON-RPC, read-only), `net` (fusion-supervisor UDS: up/down/status/restart/ping), `memory` (fusion-memory fm-server :11435)
+Ecosystem: `service`, `doc`, `desk`, `guard` (fusion-guard UDS JSON-RPC, read-only), `net` (fusion-supervisor UDS: up/down/status/restart/ping), `memory` (fusion-memory fm-server :11435), `install`/`list` (catalog module install: gateway /v1/catalog with bundled-snapshot fallback, git clone with https-to-ssh fallback, `--with-deps` language bootstrap)
 `agent` — AI agent with read-only tool calling (prompt, model, permission tier sandbox/ask/auto)
 
 Global args: `--offline`, `--verbose`, `--mlx-ctx`, `--mlx-cache`, `--no-gpu`, `--format` (json output must be pure JSON — no banner/log leaks to stdout; see `utils/output.rs`)
