@@ -7,7 +7,7 @@ doc_type: changelog
 title: { zh: "更新日志", en: "Changelog" }
 audience: engineer
 status: draft
-version: 0.4.6
+version: 0.4.7
 updated: 2026-11-07
 owner: @dahai
 source_of_truth:
@@ -22,6 +22,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.4.7] - 2026-11-07
+### Added
+- Onboarded to the fusion docs-system v1.1 contract (class=core, entry=service): six Tier docs under `docs/` (product-page, get-started, api-reference, config-reference, architecture, troubleshooting; bilingual, command/config verified against source), 12-key frontmatter on repo-root + ops docs, hardened stdlib validator at `ci/validate_docs.py`, and `.github/workflows/docs.yml` gating markdown PRs (43 baseline errors down to 0)
+- AGENTS.md reverted to local-only (gitignored) per workspace policy
 
 ## [0.4.6] - 2026-11-05
 ### Added
