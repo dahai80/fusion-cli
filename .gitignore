@@ -21,3 +21,4 @@ __pycache__/
 *.log
 *.gz
 CLAUDE.md
+AGENTS.md

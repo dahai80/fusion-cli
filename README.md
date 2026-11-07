@@ -1,10 +1,26 @@
+---
+doc_id: fusion-cli/readme
+product: fusion-cli
+class: core
+entry: service
+doc_type: readme
+title: { zh: "fusion-cli README", en: "fusion-cli README" }
+audience: engineer
+status: draft
+version: 0.4.6
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - README.md
+---
+
 <div align="center">
-  <h1>⚡ Fusion-CLI</h1>
-  <p><strong>One CLI, Control All Fusion-MLX Local AI Ecosystem.</strong></p>
-  <p><em>A single binary to manage models, inference, knowledge bases, benchmarks, automation, and services — all powered by fusion-mlx.</em></p>
+  # ⚡ Fusion-CLI
+  <p>**One CLI, Control All Fusion-MLX Local AI Ecosystem.**</p>
+  <p>*A single binary to manage models, inference, knowledge bases, benchmarks, automation, and services — all powered by fusion-mlx.*</p>
 
 <p>
-  <strong>English</strong> | <a href="README_CN.md">中文</a>
+  **English** | <a href="README_CN.md">中文</a>
 </p>
 </div>
 
@@ -564,8 +580,8 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <strong>Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.</strong>
+  **Fusion-CLI — One CLI, Control All Fusion-MLX Local AI Ecosystem.**
 </p>
 <p align="center">
-  <sub>Built with ❤️ and Rust 🦀</sub>
+  Built with ❤️ and Rust 🦀
 </p>

@@ -1,3 +1,19 @@
+---
+doc_id: fusion-cli/release-strategy
+product: fusion-cli
+class: core
+entry: service
+doc_type: guide
+title: { zh: "发布策略", en: "Release strategy" }
+audience: engineer
+status: draft
+version: 0.4.6
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - docs/RELEASE_STRATEGY.md
+---
+
 # Release Strategy — Canary & Gray Release
 
 > #54 enterprise blocker: canary/gray-release for the `fusion` binary.

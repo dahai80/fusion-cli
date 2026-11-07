@@ -1,3 +1,19 @@
+---
+doc_id: fusion-cli/enterprise-sla
+product: fusion-cli
+class: core
+entry: service
+doc_type: guide
+title: { zh: "企业 SLA 与支持流程", en: "Enterprise SLA and support process" }
+audience: engineer
+status: draft
+version: 0.4.6
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - docs/ENTERPRISE_SLA.md
+---
+
 # Enterprise SLA & Support Process (Template)
 
 > #4 enterprise gap: SLA is a commercial contract between vendor and customer,

@@ -1,3 +1,19 @@
+---
+doc_id: fusion-cli/compliance
+product: fusion-cli
+class: core
+entry: service
+doc_type: guide
+title: { zh: "合规审查清单", en: "Compliance review checklist" }
+audience: engineer
+status: draft
+version: 0.4.6
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - docs/COMPLIANCE.md
+---
+
 # Compliance & Legal Review Checklist
 
 > #5 enterprise gap: `cargo deny` covers license/audit/bans at build time, but

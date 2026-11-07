@@ -1,3 +1,19 @@
+---
+doc_id: fusion-cli/alerting
+product: fusion-cli
+class: core
+entry: service
+doc_type: guide
+title: { zh: "告警规则与 SLO", en: "Alerting rules and SLO" }
+audience: engineer
+status: draft
+version: 0.4.6
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - docs/ALERTING.md
+---
+
 # Alerting — Prometheus Rules & SLO
 
 > #5 enterprise gap: metrics are produced (`fusion metrics export` → Prometheus
