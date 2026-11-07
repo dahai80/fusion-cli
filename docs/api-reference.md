@@ -9,7 +9,7 @@ audience: engineer
 status: draft
 version: 0.4.6
 updated: 2026-11-07
-owner: @dahai
+owner: "@dahai"
 source_of_truth:
   - src/main.rs
   - src/cmd/mod.rs
