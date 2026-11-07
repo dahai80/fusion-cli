@@ -1,3 +1,19 @@
+---
+doc_id: fusion-cli/ops-runbook
+product: fusion-cli
+class: core
+entry: service
+doc_type: guide
+title: { zh: "运维手册", en: "Operations runbook" }
+audience: engineer
+status: draft
+version: 0.4.6
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - docs/OPS_RUNBOOK.md
+---
+
 # Operations Runbook
 
 > #6 enterprise gap: deployment topology + ops SOP. This is the on-call

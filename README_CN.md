@@ -1,10 +1,26 @@
+---
+doc_id: fusion-cli/readme
+product: fusion-cli
+class: core
+entry: service
+doc_type: readme
+title: { zh: "fusion-cli 中文说明", en: "fusion-cli README (Chinese)" }
+audience: engineer
+status: draft
+version: 0.4.6
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - README_CN.md
+---
+
 <div align="center">
-  <h1>⚡ Fusion-CLI</h1>
-  <p><strong>一个 CLI，掌控整个 Fusion-MLX 本地 AI 生态。</strong></p>
-  <p><em>单一二进制文件管理模型、推理、知识库、基准测试、自动化和全部服务 — 全部基于 fusion-mlx。</em></p>
+  # ⚡ Fusion-CLI
+  <p>**一个 CLI，掌控整个 Fusion-MLX 本地 AI 生态。**</p>
+  <p>*单一二进制文件管理模型、推理、知识库、基准测试、自动化和全部服务 — 全部基于 fusion-mlx。*</p>
 
 <p>
-  <a href="README.md">English</a> | <strong>中文</strong>
+  <a href="README.md">English</a> | **中文**
 </p>
 </div>
 
@@ -530,8 +546,8 @@ Apache 2.0 许可证。详见 [LICENSE](LICENSE)。
 ---
 
 <p align="center">
-  <strong>Fusion-CLI — 一个 CLI，掌控整个 Fusion-MLX 本地 AI 生态。</strong>
+  **Fusion-CLI — 一个 CLI，掌控整个 Fusion-MLX 本地 AI 生态。**
 </p>
 <p align="center">
-  <sub>用 ❤️ 和 Rust 🦀 构建</sub>
+  用 ❤️ 和 Rust 🦀 构建
 </p>

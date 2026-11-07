@@ -1,3 +1,19 @@
+---
+doc_id: fusion-cli/changelog
+product: fusion-cli
+class: core
+entry: service
+doc_type: changelog
+title: { zh: "更新日志", en: "Changelog" }
+audience: engineer
+status: draft
+version: 0.4.6
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - CHANGELOG.md
+---
+
 # Changelog
 
 All notable changes to **fusion-cli** are documented in this file.
@@ -368,7 +384,7 @@ six-dimension product audit (`audit/fusion-cli-audit-result-product-0901.md`).
   false immediately on 4xx (no retry) with exponential backoff on transient errors
   (audit R3/R4).
 - **TUI system-info CPU/IO churn.** `fetch_system_info` reused a single `System` instance
-  (Lazy<Mutex<System>>) calling only `refresh_cpu_usage`+`refresh_memory` — no per-tick
+  `Lazy<Mutex<System>>` calling only `refresh_cpu_usage`+`refresh_memory` — no per-tick
   `System::new_all()`/`refresh_all()` process enumeration (audit R9).
 - **Config cache invalidation.** `ServiceUrls::from_config()` now reads an mtime-cached
   config (reloads only on file change); `save_config` invalidates the cache after write

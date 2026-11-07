@@ -1,3 +1,19 @@
+---
+doc_id: fusion-cli/backup-dr
+product: fusion-cli
+class: core
+entry: service
+doc_type: guide
+title: { zh: "备份与灾难恢复", en: "Backup and disaster recovery" }
+audience: engineer
+status: draft
+version: 0.4.6
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - docs/BACKUP_DR.md
+---
+
 # Backup & Disaster Recovery
 
 > #3 enterprise gap: backup/DR is an ops responsibility, but the executable
