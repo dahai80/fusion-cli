@@ -10,6 +10,13 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
+# fusion#2 CI retrofit: cancel superseded runs on the same ref (PR pushes
+# replace each other; consecutive main pushes only need the latest run —
+# the canary release keys off the newest successful run).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # #53 依赖锁固化: 提交 Cargo.lock + cargo-deny 守护 (许可证/漏洞/重复/禁包)。
   deny:
@@ -18,11 +25,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # fusion#2 CI retrofit: cache the installed cargo-deny binary (the
+      # source build dominates this job's wall time). Bump the key suffix
+      # to force a reinstall after a cargo-deny upgrade.
+      - name: Cache cargo-deny binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-deny
+          key: cargo-deny-${{ runner.os }}-v1
       # 直接 cargo install cargo-deny, 不用 EmbarkStudios/cargo-deny-action@v2:
       # 该 action v2 把 arguments 拼到 command 之前, 导致 `cargo-deny advisories ... check`
       # 被解析为未知子命令 (2026-09-01 上游回归)。直接调用 cargo deny 顺序确定。
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked --quiet
+      - name: Install cargo-deny (cached)
+        run: command -v cargo-deny >/dev/null 2>&1 || cargo install cargo-deny --locked --quiet
       # 校验全部维度: 许可证白名单 + RustSec 漏洞公告 + 重复依赖 + 禁包 + 源白名单。
       # deny.toml 在仓库根自动发现; all-features 在 [graph] 段配置, 无需 CLI 传参。
       - run: cargo deny check advisories bans licenses sources
