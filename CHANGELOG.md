@@ -7,7 +7,7 @@ doc_type: changelog
 title: { zh: "更新日志", en: "Changelog" }
 audience: engineer
 status: draft
-version: 0.4.7
+version: 0.4.8
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.4.8] - 2026-11-16
+### Changed
+- CI retrofit per the fusion#2 checklist (closes #36): `concurrency` groups with `cancel-in-progress` on `ci.yml` + `docs.yml` (superseded runs on the same ref cancel instead of piling up), and the cargo-deny binary is now cached in the deny job (source install dominated that job). Assessed and skipped: test sharding (~40s suite) and a nightly tiered gate (~5-6 parallel job-minutes total, no slow tail).
 
 ## [0.4.7] - 2026-11-07
 ### Added
