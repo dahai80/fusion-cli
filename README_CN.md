@@ -68,6 +68,18 @@ source_of_truth:
 
 ### 安装
 
+独立安装（推荐 — 从 GitHub Releases 装到 `~/.fusion/bin` 持久路径，不依赖 FusionMLX 桌面应用的 shim）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dahai80/fusion-cli/main/install.sh | bash
+```
+
+`fusion version` / `fusion doctor` 会检测当前二进制是否运行在临时路径
+（DMG 挂载卷 / app bundle / 临时目录）并给出修复提示。桌面应用的 CLI
+shim 仅作为回退。
+
+从源码构建：
+
 ```bash
 # 克隆
 git clone https://github.com/dahai80/fusion-cli.git

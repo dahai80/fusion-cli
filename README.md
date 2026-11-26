@@ -68,6 +68,19 @@ source_of_truth:
 
 ### Installation
 
+Standalone install from GitHub Releases (recommended — durable binary under
+`~/.fusion/bin`, independent of the FusionMLX desktop app shim):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dahai80/fusion-cli/main/install.sh | bash
+```
+
+`fusion version` / `fusion doctor` report when the running binary comes from
+an ephemeral path (mounted DMG / app bundle / temp dir) with the fix hint.
+The desktop app's CLI shim is a fallback only.
+
+Build from source:
+
 ```bash
 # Clone
 git clone https://github.com/dahai80/fusion-cli.git
