@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build --release          # Binary: target/release/fusion
 cargo run -- <subcommand>      # Run in dev mode
-cargo test                     # 157 tests + 3 ignored, all in #[cfg(test)] blocks (no tests/ dir)
+cargo test                     # 162 tests + 3 ignored, all in #[cfg(test)] blocks (no tests/ dir)
                                # Regenerate the count above: cargo test 2>&1 | grep "test result"
 cargo check --all-targets      # Type-check incl. tests/benches
 cargo fmt --all -- --check     # Format check (CI enforces)
@@ -69,6 +69,7 @@ Knowledge: `kb` (CRUD + ingest/query), `rag` (start/stop/status/search/list)
 Bench: `bench` (speed/mem/ctx/auto via MLX API), `eval` (fusion-bench HTTP service :11467)
 Ecosystem: `service`, `doc`, `desk`, `guard` (fusion-guard UDS JSON-RPC, read-only), `net` (fusion-supervisor UDS: up/down/status/restart/ping), `memory` (fusion-memory fm-server :11435), `install`/`list` (catalog module install: gateway /v1/catalog with bundled-snapshot fallback, git clone with https-to-ssh fallback, `--with-deps` language bootstrap)
 `agent` — AI agent with read-only tool calling (prompt, model, permission tier sandbox/ask/auto)
+`install.sh` (repo root) — standalone installer: release tarball from GitHub Releases to a durable path (`~/.fusion/bin` default); `fusion version`/`doctor` self-check flags ephemeral installs (DMG/app-bundle/temp paths) via `utils/install.rs` InstallKind classifier
 
 Global args: `--offline`, `--verbose`, `--mlx-ctx`, `--mlx-cache`, `--no-gpu`, `--format` (json output must be pure JSON — no banner/log leaks to stdout; see `utils/output.rs`)
 
