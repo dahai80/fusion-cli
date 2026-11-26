@@ -21,6 +21,7 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "paste unmaintained (non-CVE), pulled by ratatui 0.29; upgrade ratatui is separate TUI migration, out of #53 scope" },
     { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained (non-CVE), pulled by tabled 0.18; upgrade tabled is separate migration, out of #53 scope" },
     { id = "RUSTSEC-2025-0119", reason = "number_prefix unmaintained (non-CVE), pulled by indicatif 0.17; upgrade indicatif is separate migration, out of #53 scope" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (non-CVE), direct dep + pulled by cron 0.15; migration to time/jiff is a separate task" },
 ]
 
 # 许可证白名单 — 全部为宽松许可, 无 copyleft (GPL/LGPL/AGPL)。

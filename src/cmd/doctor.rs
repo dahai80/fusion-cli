@@ -72,6 +72,27 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
     );
     println!();
 
+    // 1b. 安装持久性 (#40): 应用 shim 指向 DMG/app bundle 内的二进制会在
+    // 卸载卷后失效, 此处显式诊断而不是静默运行。
+    println!("{}", "📦 Install Durability".bold());
+    let (kind, exe_path) = crate::utils::install::classify_current_exe();
+    match kind {
+        crate::utils::install::InstallKind::Durable => {
+            println!("  {} durable install at {}", "✅".green(), exe_path.cyan());
+        }
+        crate::utils::install::InstallKind::Ephemeral => {
+            println!(
+                "  {} ephemeral install at {}",
+                "⚠️".yellow(),
+                exe_path.yellow()
+            );
+            println!("    This binary lives on a mounted volume/bundle/temp path and");
+            println!("    breaks on eject or reboot (app-shim fallback). Standalone install:");
+            println!("    {}", "curl -fsSL https://raw.githubusercontent.com/dahai80/fusion-cli/main/install.sh | bash".cyan());
+        }
+    }
+    println!();
+
     // 2. 磁盘信息
     println!("{}", "💾 Disk Information".bold());
     let disks = Disks::new_with_refreshed_list();

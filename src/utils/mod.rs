@@ -2,6 +2,7 @@ pub mod audit;
 pub mod backpressure;
 pub mod cron_store;
 pub mod crypto;
+pub mod install;
 pub mod logger;
 pub mod metrics;
 pub mod output;
