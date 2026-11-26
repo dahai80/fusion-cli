@@ -7,8 +7,8 @@ doc_type: changelog
 title: { zh: "更新日志", en: "Changelog" }
 audience: engineer
 status: draft
-version: 0.4.8
-updated: 2026-11-07
+version: 0.4.9
+updated: 2026-11-26
 owner: "@dahai"
 source_of_truth:
   - CHANGELOG.md
@@ -26,6 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.8] - 2026-11-16
 ### Changed
 - CI retrofit per the fusion#2 checklist (closes #36): `concurrency` groups with `cancel-in-progress` on `ci.yml` + `docs.yml` (superseded runs on the same ref cancel instead of piling up), and the cargo-deny binary is now cached in the deny job (source install dominated that job). Assessed and skipped: test sharding (~40s suite) and a nightly tiered gate (~5-6 parallel job-minutes total, no slow tail).
+
+## [0.4.9] - 2026-11-26
+### Added
+- Standalone install path so the `fusion` binary no longer depends on the FusionMLX desktop app's CLI shim (closes #40; upstream breakage: dahai80/fusion-mlx#1733):
+  - `install.sh`: downloads a release tarball from GitHub Releases and installs to a durable path (`~/.fusion/bin` by default; `FUSION_INSTALL_DIR` / `FUSION_INSTALL_VERSION` env overrides). No third-party mirror proxying (supply-chain decision); api.github.com source-tarball fallback. The app shim remains a fallback only
+  - `src/utils/install.rs`: `InstallKind` path classifier — `/Volumes/`, `.app/Contents/`, temp dirs, and cargo `target/` are ephemeral; `/usr/local/`, `/opt/`, `/usr/bin/`, `/Users/`, `/home/` are durable; unresolvable paths degrade to ephemeral (fail visible)
+  - `fusion version`: reports `install: <path> (durable|ephemeral)`; JSON mode gains `install_kind` / `install_path`; ephemeral runs print a warning + the standalone-install one-liner
+  - `fusion doctor`: new "Install Durability" section flagging ephemeral installs with remediation
+- README/README_CN: standalone install presented as the primary path, app shim documented as fallback
+
+### Fixed
+- Dependency policy: `url` bumped to 2.5.9 (RUSTSEC-2026-0592, stack overflow in `Url::origin()` on nested `blob:` URLs); chrono unmaintained advisory (RUSTSEC-2026-0543, non-CVE, no patched version) accepted with reason in `deny.toml`, same precedent as paste/number_prefix
+
+### Tests
+- 6 unit tests for path classification (dmg/bundle, temp/target, empty, durable prefixes, app-shim through public bin) — 162 total
 
 ## [0.4.7] - 2026-11-07
 ### Added
